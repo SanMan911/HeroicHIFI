@@ -4,8 +4,8 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, File, UploadFile, Query
+from fastapi.responses import StreamingResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import List, Optional
 from bson import ObjectId
+import requests as http_requests
 
 # ── PDF imports ──
 from reportlab.lib.pagesizes import A4
@@ -194,6 +195,109 @@ class QueryInput(BaseModel):
 class StatusUpdate(BaseModel):
     status: str
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    email: str
+    token: str
+    new_password: str
+
+class TicketInput(BaseModel):
+    subject: str
+    description: str
+    priority: str = "medium"
+
+class TicketResponse(BaseModel):
+    response: str
+
+class AdminUserUpdate(BaseModel):
+    role: Optional[str] = None
+    volunteer_hours: Optional[int] = None
+    merchandise_issued: Optional[bool] = None
+    admin_comments: Optional[str] = None
+    status: Optional[str] = None
+    suspended_until: Optional[str] = None
+    suspension_reason: Optional[str] = None
+
+class BadgeAction(BaseModel):
+    badge: str
+
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+
+# ── Object Storage ──
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+APP_NAME = "heroic-hifi"
+storage_key = None
+
+def init_storage():
+    global storage_key
+    if storage_key:
+        return storage_key
+    ekey = os.environ.get("EMERGENT_LLM_KEY", "")
+    if not ekey:
+        logger.warning("EMERGENT_LLM_KEY not set, storage disabled")
+        return None
+    try:
+        resp = http_requests.post(f"{STORAGE_URL}/init", json={"emergent_key": ekey}, timeout=30)
+        resp.raise_for_status()
+        storage_key = resp.json()["storage_key"]
+        logger.info("Object storage initialized")
+        return storage_key
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
+        return None
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=500, detail="Storage not available")
+    resp = http_requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+def get_object(path: str):
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=500, detail="Storage not available")
+    resp = http_requests.get(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key}, timeout=60
+    )
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+# ── Badge System ──
+AUTO_BADGES = {
+    "Helping Hero": lambda u, stats: True,
+    "Century Hero": lambda u, stats: (u.get("volunteer_hours") or 0) >= 100,
+    "Generous Soul": lambda u, stats: stats.get("total_donated", 0) >= 10000,
+    "Community Builder": lambda u, stats: stats.get("messages_sent", 0) >= 50,
+}
+ADMIN_ONLY_BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Rising Star"]
+
+async def compute_auto_badges(user_doc):
+    email = user_doc.get("email", "")
+    total_donated_agg = await db.donations.aggregate([
+        {"$match": {"email": email, "status": {"$in": ["confirmed", "pending"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    total_donated = total_donated_agg[0]["total"] if total_donated_agg else 0
+    msgs_sent = await db.messages.count_documents({"sender_email": email})
+    stats = {"total_donated": total_donated, "messages_sent": msgs_sent}
+    earned = []
+    for badge_name, check_fn in AUTO_BADGES.items():
+        if check_fn(user_doc, stats):
+            earned.append(badge_name)
+    return earned, total_donated
+
 # ── OTP Endpoints ──
 async def send_otp_email(email: str, otp: str):
     api_key = os.environ.get("RESEND_API_KEY", "")
@@ -280,6 +384,10 @@ async def register(data: RegisterInput, request: Request):
         "address": data.address, "pan_number": data.pan_number,
         "aadhaar_number": data.aadhaar_number,
         "role": "volunteer", "email_verified": True,
+        "volunteer_hours": 0, "badges": ["Helping Hero"],
+        "profile_pic_path": "", "status": "active",
+        "merchandise_issued": False, "admin_comments": "",
+        "suspended_until": None, "suspension_reason": "",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.users.insert_one(doc)
@@ -287,7 +395,7 @@ async def register(data: RegisterInput, request: Request):
     token = create_access_token(user_id, email)
     await db.otp_tokens.delete_many({"email": email, "purpose": "registration"})
     await log_activity("user_registered", "user", user_id, email, f"New user: {data.name}", request.client.host if request.client else "")
-    return {"token": token, "user": {"id": user_id, "name": data.name, "email": email, "role": "volunteer", "phone": data.phone, "pan_number": data.pan_number, "aadhaar_number": data.aadhaar_number, "address": data.address, "age": data.age, "dob": data.dob}}
+    return {"token": token, "user": {"id": user_id, "name": data.name, "email": email, "role": "volunteer", "phone": data.phone, "pan_number": data.pan_number, "aadhaar_number": data.aadhaar_number, "address": data.address, "age": data.age, "dob": data.dob, "volunteer_hours": 0, "badges": ["Helping Hero"], "profile_pic_path": "", "status": "active"}}
 
 @api_router.post("/auth/login")
 async def login(data: LoginInput, request: Request):
@@ -295,6 +403,15 @@ async def login(data: LoginInput, request: Request):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("status") == "suspended":
+        sus_until = user.get("suspended_until", "")
+        reason = user.get("suspension_reason", "")
+        msg = "Your account is suspended."
+        if sus_until:
+            msg += f" Until: {sus_until}."
+        if reason:
+            msg += f" Reason: {reason}"
+        raise HTTPException(status_code=403, detail=msg)
     user_id = str(user["_id"])
     token = create_access_token(user_id, email)
     await log_activity("user_login", "user", user_id, email, "Login successful", request.client.host if request.client else "")
@@ -302,6 +419,8 @@ async def login(data: LoginInput, request: Request):
         "id": user_id, "name": user.get("name", ""), "email": email, "role": user.get("role", "volunteer"),
         "phone": user.get("phone", ""), "pan_number": user.get("pan_number", ""), "aadhaar_number": user.get("aadhaar_number", ""),
         "address": user.get("address", ""), "age": user.get("age"), "dob": user.get("dob", ""),
+        "volunteer_hours": user.get("volunteer_hours", 0), "badges": user.get("badges", ["Helping Hero"]),
+        "profile_pic_path": user.get("profile_pic_path", ""), "status": user.get("status", "active"),
     }}
 
 @api_router.get("/auth/me")
@@ -571,24 +690,6 @@ async def submit_query(data: QueryInput, request: Request):
     return {"message": "Your query has been submitted successfully.", "query": doc}
 
 # ── Admin Routes ──
-@api_router.get("/admin/stats")
-async def admin_stats(user: dict = Depends(require_admin)):
-    total_donations = await db.donations.count_documents({})
-    agg = await db.donations.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
-    total_amount = agg[0]["total"] if agg else 0
-    confirmed = await db.donations.count_documents({"status": "confirmed"})
-    total_vol = await db.volunteers.count_documents({})
-    approved_vol = await db.volunteers.count_documents({"status": "approved"})
-    total_q = await db.queries.count_documents({})
-    open_q = await db.queries.count_documents({"status": "open"})
-    total_users = await db.users.count_documents({})
-    return {
-        "donations": {"total": total_donations, "confirmed": confirmed, "total_amount": total_amount},
-        "volunteers": {"total": total_vol, "approved": approved_vol},
-        "queries": {"total": total_q, "open": open_q},
-        "users": {"total": total_users},
-    }
-
 @api_router.get("/admin/donations")
 async def admin_list_donations(user: dict = Depends(require_admin)):
     return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -628,7 +729,12 @@ async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict
 @api_router.get("/admin/users")
 async def admin_list_users(user: dict = Depends(require_admin)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
-    # Add string id from email for identification
+    for u in users:
+        total_agg = await db.donations.aggregate([
+            {"$match": {"email": u["email"], "status": {"$in": ["confirmed", "pending"]}}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+        ]).to_list(1)
+        u["total_donated"] = total_agg[0]["total"] if total_agg else 0
     return users
 
 @api_router.delete("/admin/users/{user_email}")
@@ -646,8 +752,8 @@ async def admin_delete_user(user_email: str, user: dict = Depends(require_admin)
 @api_router.get("/directory")
 async def get_directory(user: dict = Depends(get_current_user)):
     members = await db.users.find(
-        {"role": {"$ne": "admin"}},
-        {"_id": 0, "password_hash": 0, "pan_number": 0, "aadhaar_number": 0, "address": 0, "dob": 0, "age": 0}
+        {"role": {"$ne": "admin"}, "status": {"$ne": "suspended"}},
+        {"_id": 0, "password_hash": 0, "pan_number": 0, "aadhaar_number": 0, "address": 0, "dob": 0, "age": 0, "admin_comments": 0, "merchandise_issued": 0, "suspended_until": 0, "suspension_reason": 0}
     ).sort("created_at", -1).to_list(500)
     return members
 
@@ -752,6 +858,264 @@ async def admin_get_thread(email1: str, email2: str, user: dict = Depends(requir
     ).sort("created_at", 1).to_list(500)
     return msgs
 
+# ── Password Reset ──
+async def send_reset_email(email: str, token: str):
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    frontend_url = os.environ.get("FRONTEND_URL", "https://hifi-donor-portal.preview.emergentagent.com")
+    reset_link = f"{frontend_url}/reset-password?token={token}&email={email}"
+    if not api_key or not resend:
+        logger.info(f"[RESET MOCK] Email: {email}, Token: {token}, Link: {reset_link}")
+        return False, reset_link
+    try:
+        resend.api_key = api_key
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [email],
+            "subject": "Heroic HIFI Foundation - Password Reset",
+            "html": f"""
+            <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+                <h2 style="color:#1E56A0;">Heroic HIFI Foundation</h2>
+                <p>You requested a password reset. Click the link below:</p>
+                <div style="margin:20px 0;">
+                    <a href="{reset_link}" style="background:#1E56A0;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Reset Password</a>
+                </div>
+                <p style="color:#666;font-size:13px;">This link expires in 30 minutes. If you did not request this, please ignore this email.</p>
+            </div>
+            """
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True, reset_link
+    except Exception as e:
+        logger.error(f"Reset email error: {e}")
+        return False, reset_link
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(data: PasswordResetRequest, request: Request):
+    email = data.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user:
+        return {"message": "If an account with that email exists, a reset link has been sent."}
+    token = secrets.token_hex(32)
+    await db.password_reset_tokens.delete_many({"email": email})
+    await db.password_reset_tokens.insert_one({
+        "email": email, "token": token, "used": False,
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=30)
+    })
+    sent, link = await send_reset_email(email, token)
+    await log_activity("password_reset_requested", "auth", "", email, f"Reset email sent={sent}", request.client.host if request.client else "")
+    result = {"message": "If an account with that email exists, a reset link has been sent.", "email_sent": sent}
+    if not sent:
+        result["debug_link"] = link
+    return result
+
+@api_router.post("/auth/reset-password")
+async def reset_password(data: PasswordResetConfirm, request: Request):
+    email = data.email.lower().strip()
+    record = await db.password_reset_tokens.find_one({"email": email, "token": data.token, "used": False})
+    if not record:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+    expires_at = record["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+    elif expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Reset link has expired. Please request a new one.")
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(data.new_password)}})
+    await db.password_reset_tokens.update_one({"_id": record["_id"]}, {"$set": {"used": True}})
+    await log_activity("password_reset_completed", "auth", "", email, "Password reset successful", request.client.host if request.client else "")
+    return {"message": "Password reset successfully. You can now log in with your new password."}
+
+# ── Profile ──
+@api_router.get("/profile")
+async def get_profile(user: dict = Depends(get_current_user)):
+    email = user["email"]
+    auto_badges, total_donated = await compute_auto_badges(user)
+    current_badges = list(set(user.get("badges", []) + auto_badges))
+    if set(current_badges) != set(user.get("badges", [])):
+        await db.users.update_one({"email": email}, {"$set": {"badges": current_badges}})
+    return {
+        "name": user.get("name", ""), "email": email, "phone": user.get("phone", ""),
+        "address": user.get("address", ""), "role": user.get("role", "volunteer"),
+        "volunteer_hours": user.get("volunteer_hours", 0),
+        "badges": current_badges, "total_donated": total_donated,
+        "profile_pic_path": user.get("profile_pic_path", ""),
+        "pan_number": user.get("pan_number", ""), "aadhaar_number": user.get("aadhaar_number", ""),
+        "age": user.get("age"), "dob": user.get("dob", ""),
+        "status": user.get("status", "active"),
+        "created_at": user.get("created_at", ""),
+    }
+
+@api_router.put("/profile")
+async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_user)):
+    updates = {}
+    if data.name is not None:
+        updates["name"] = data.name
+    if data.phone is not None:
+        updates["phone"] = data.phone
+    if data.address is not None:
+        updates["address"] = data.address
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    await db.users.update_one({"email": user["email"]}, {"$set": updates})
+    return {"message": "Profile updated successfully"}
+
+@api_router.post("/profile/upload-pic")
+async def upload_profile_pic(user: dict = Depends(get_current_user), file: UploadFile = File(...)):
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP, and GIF images are allowed.")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum 5MB.")
+    ext = file.filename.split(".")[-1] if "." in file.filename else "png"
+    path = f"{APP_NAME}/profiles/{user['_id']}/{uuid.uuid4()}.{ext}"
+    try:
+        result = put_object(path, data, file.content_type)
+        stored_path = result.get("path", path)
+        await db.users.update_one({"email": user["email"]}, {"$set": {"profile_pic_path": stored_path}})
+        return {"message": "Profile picture uploaded", "path": stored_path}
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+@api_router.get("/files/{path:path}")
+async def serve_file(path: str, auth: str = Query(None), request: Request = None):
+    auth_header = ""
+    if request:
+        auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:] if auth_header.startswith("Bearer ") else auth
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    try:
+        file_data, content_type = get_object(path)
+        return Response(content=file_data, media_type=content_type)
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
+
+# ── Grievance Tickets ──
+@api_router.post("/tickets")
+async def create_ticket(data: TicketInput, request: Request, user: dict = Depends(get_current_user)):
+    doc = {
+        "id": str(uuid.uuid4()), "user_email": user["email"], "user_name": user.get("name", ""),
+        "subject": data.subject, "description": data.description,
+        "priority": data.priority, "status": "open", "admin_response": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.tickets.insert_one(doc)
+    doc.pop("_id", None)
+    await log_activity("ticket_created", "ticket", doc["id"], user["email"], f"Subject: {data.subject}", request.client.host if request.client else "")
+    return {"message": "Ticket submitted successfully. We will review it shortly.", "ticket": doc}
+
+@api_router.get("/tickets")
+async def list_my_tickets(user: dict = Depends(get_current_user)):
+    tickets = await db.tickets.find({"user_email": user["email"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return tickets
+
+@api_router.get("/admin/tickets")
+async def admin_list_tickets(user: dict = Depends(require_admin)):
+    return await db.tickets.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.put("/admin/tickets/{ticket_id}/status")
+async def admin_update_ticket_status(ticket_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
+    result = await db.tickets.update_one({"id": ticket_id}, {"$set": {"status": data.status, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    await log_activity("ticket_status_updated", "ticket", ticket_id, user["email"], f"Status -> {data.status}", "")
+    return {"message": "Ticket status updated"}
+
+@api_router.put("/admin/tickets/{ticket_id}/respond")
+async def admin_respond_ticket(ticket_id: str, data: TicketResponse, user: dict = Depends(require_admin)):
+    result = await db.tickets.update_one({"id": ticket_id}, {"$set": {"admin_response": data.response, "status": "responded", "updated_at": datetime.now(timezone.utc).isoformat()}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    await log_activity("ticket_responded", "ticket", ticket_id, user["email"], "Admin responded", "")
+    return {"message": "Response sent"}
+
+# ── Extended Admin: User Management ──
+@api_router.put("/admin/users/{user_email}/update")
+async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    target = await db.users.find_one({"email": email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    updates = {}
+    if data.role is not None:
+        updates["role"] = data.role
+    if data.volunteer_hours is not None:
+        updates["volunteer_hours"] = data.volunteer_hours
+    if data.merchandise_issued is not None:
+        updates["merchandise_issued"] = data.merchandise_issued
+    if data.admin_comments is not None:
+        updates["admin_comments"] = data.admin_comments
+    if data.status is not None:
+        updates["status"] = data.status
+        if data.status == "suspended":
+            updates["suspended_until"] = data.suspended_until or ""
+            updates["suspension_reason"] = data.suspension_reason or ""
+        elif data.status == "active":
+            updates["suspended_until"] = None
+            updates["suspension_reason"] = ""
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    await db.users.update_one({"email": email}, {"$set": updates})
+    changes = ", ".join(f"{k}={v}" for k, v in updates.items())
+    await log_activity("admin_user_updated", "user", email, admin["email"], changes, "")
+    return {"message": f"User {email} updated successfully"}
+
+@api_router.post("/admin/users/{user_email}/badge")
+async def admin_add_badge(user_email: str, data: BadgeAction, admin: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    target = await db.users.find_one({"email": email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    current_badges = target.get("badges", [])
+    if data.badge not in current_badges:
+        current_badges.append(data.badge)
+        await db.users.update_one({"email": email}, {"$set": {"badges": current_badges}})
+    await log_activity("badge_added", "user", email, admin["email"], f"Badge: {data.badge}", "")
+    return {"message": f"Badge '{data.badge}' added", "badges": current_badges}
+
+@api_router.delete("/admin/users/{user_email}/badge/{badge_name}")
+async def admin_remove_badge(user_email: str, badge_name: str, admin: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    target = await db.users.find_one({"email": email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    current_badges = [b for b in target.get("badges", []) if b != badge_name]
+    await db.users.update_one({"email": email}, {"$set": {"badges": current_badges}})
+    await log_activity("badge_removed", "user", email, admin["email"], f"Badge: {badge_name}", "")
+    return {"message": f"Badge '{badge_name}' removed", "badges": current_badges}
+
+@api_router.get("/admin/stats")
+async def admin_stats(user: dict = Depends(require_admin)):
+    total_donations = await db.donations.count_documents({})
+    agg = await db.donations.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+    total_amount = agg[0]["total"] if agg else 0
+    confirmed = await db.donations.count_documents({"status": "confirmed"})
+    total_vol = await db.volunteers.count_documents({})
+    approved_vol = await db.volunteers.count_documents({"status": "approved"})
+    total_q = await db.queries.count_documents({})
+    open_q = await db.queries.count_documents({"status": "open"})
+    total_users = await db.users.count_documents({})
+    total_tickets = await db.tickets.count_documents({})
+    open_tickets = await db.tickets.count_documents({"status": "open"})
+    return {
+        "donations": {"total": total_donations, "confirmed": confirmed, "total_amount": total_amount},
+        "volunteers": {"total": total_vol, "approved": approved_vol},
+        "queries": {"total": total_q, "open": open_q},
+        "users": {"total": total_users},
+        "tickets": {"total": total_tickets, "open": open_tickets},
+    }
+
 # ── Health ──
 @api_router.get("/health")
 async def health():
@@ -771,6 +1135,12 @@ app.add_middleware(
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.otp_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.tickets.create_index("user_email")
+    try:
+        init_storage()
+    except Exception as e:
+        logger.warning(f"Storage init on startup: {e}")
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@heroichifi.org")
     admin_password = os.environ.get("ADMIN_PASSWORD", "HHF@admin2024")
     existing = await db.users.find_one({"email": admin_email})

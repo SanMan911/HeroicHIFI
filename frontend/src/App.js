@@ -13,6 +13,9 @@ import Contact from "./pages/Contact";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Community from "./pages/Community";
+import Profile from "./pages/Profile";
+import ResetPassword from "./pages/ResetPassword";
+import Tickets from "./pages/Tickets";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -34,6 +37,9 @@ function App() {
                   <Route path="/volunteer" element={<Volunteer />} />
                   <Route path="/contact" element={<Contact />} />
                   <Route path="/community" element={<Community />} />
+                  <Route path="/profile" element={<Profile />} />
+                  <Route path="/tickets" element={<Tickets />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                 </Routes>
               </Layout>

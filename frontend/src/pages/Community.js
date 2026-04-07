@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 function MemberCard({ member, onConnect, t }) {
   const interests = member.interests || [];
+  const badges = member.badges || [];
   return (
     <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-4 flex items-center justify-between hover:shadow-md transition-shadow" data-testid={`member-${member.email}`}>
       <div className="flex items-center gap-3 min-w-0">
@@ -20,13 +21,16 @@ function MemberCard({ member, onConnect, t }) {
         </div>
         <div className="min-w-0">
           <p className="text-sm font-medium text-[#0D2847] truncate">{member.name}</p>
-          <p className="text-xs text-slate-400">{member.role === "admin" ? t.admin_role : t.volunteer_role}</p>
-          {interests.length > 0 && (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span>{member.role === "admin" ? t.admin_role : t.volunteer_role}</span>
+            {(member.volunteer_hours || 0) > 0 && <span>&middot; {member.volunteer_hours}h</span>}
+          </div>
+          {badges.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
-              {interests.slice(0, 3).map((i) => (
-                <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100">{i.replace("mission-", "").replace(/-/g, " ")}</span>
+              {badges.slice(0, 3).map((b) => (
+                <span key={b} className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">{b}</span>
               ))}
-              {interests.length > 3 && <span className="text-[9px] text-slate-400">+{interests.length - 3}</span>}
+              {badges.length > 3 && <span className="text-[9px] text-slate-400">+{badges.length - 3}</span>}
             </div>
           )}
         </div>

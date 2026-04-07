@@ -3,7 +3,7 @@ import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { MEDIA, MISSIONS_CLIENT } from "../data/missions";
 import { Button } from "../components/ui/button";
-import { Sparkles, Heart, BookOpen, UtensilsCrossed, TreePine, PawPrint, Shirt, Droplets, ChefHat, ArrowRight } from "lucide-react";
+import { Sparkles, Heart, BookOpen, UtensilsCrossed, TreePine, PawPrint, Shirt, Droplets, ChefHat, ArrowRight, Gift, Umbrella, Flower2 } from "lucide-react";
 import Marquee from "react-fast-marquee";
 import { motion } from "framer-motion";
 
@@ -167,6 +167,36 @@ function DrivesSection() {
             <h3 className="text-xl sm:text-2xl font-medium text-[#0D2847] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.langar_title}</h3>
             <p className="text-sm sm:text-base text-slate-500 leading-relaxed">{t.langar_desc}</p>
           </motion.div>
+        </div>
+
+        <div className="mt-12">
+          <p className="text-center text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#1E56A0] mb-8">{t.custom_drives_title}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0 }}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-sky-100 hover:shadow-md transition-shadow text-center" data-testid="birthday-drive-card">
+              <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center mx-auto mb-4">
+                <Gift className="w-5 h-5 text-pink-500" />
+              </div>
+              <h4 className="text-base font-medium text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.birthday_title}</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">{t.birthday_desc}</p>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-sky-100 hover:shadow-md transition-shadow text-center" data-testid="memorial-drive-card">
+              <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center mx-auto mb-4">
+                <Flower2 className="w-5 h-5 text-violet-500" />
+              </div>
+              <h4 className="text-base font-medium text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.memorial_title}</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">{t.memorial_desc}</p>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-sky-100 hover:shadow-md transition-shadow text-center" data-testid="seasonal-drive-card">
+              <div className="w-10 h-10 rounded-xl bg-cyan-50 flex items-center justify-center mx-auto mb-4">
+                <Umbrella className="w-5 h-5 text-cyan-600" />
+              </div>
+              <h4 className="text-base font-medium text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.seasonal_title}</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">{t.seasonal_desc}</p>
+            </motion.div>
+          </div>
         </div>
       </div>
     </section>

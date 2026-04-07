@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { motion } from "framer-motion";
-import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle } from "lucide-react";
+import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, AlertTriangle, PauseCircle, PlayCircle } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_COLORS = {
@@ -227,6 +227,7 @@ export default function Dashboard() {
   const [queries, setQueries] = useState([]);
   const [users, setUsers] = useState([]);
   const [messageThreads, setMessageThreads] = useState([]);
+  const [tickets, setTickets] = useState([]);
   const [activeAdminThread, setActiveAdminThread] = useState(null);
   const [adminThreadMsgs, setAdminThreadMsgs] = useState([]);
   const [fetching, setFetching] = useState(true);
@@ -237,13 +238,14 @@ export default function Dashboard() {
     if (!isAdmin) { setFetching(false); return; }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/donations"),
         api.get("/admin/volunteers"),
         api.get("/admin/queries"),
         api.get("/admin/users"),
         api.get("/admin/messages"),
+        api.get("/admin/tickets"),
       ]);
       setStats(statsRes.data);
       setDonations(donRes.data);
@@ -251,6 +253,7 @@ export default function Dashboard() {
       setQueries(qRes.data);
       setUsers(usersRes.data);
       setMessageThreads(msgsRes.data);
+      setTickets(ticketsRes.data);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -291,6 +294,57 @@ export default function Dashboard() {
     }
   };
 
+  const handleAdminUpdateUser = async (email, updates) => {
+    try {
+      await api.put(`/admin/users/${encodeURIComponent(email)}/update`, updates);
+      toast.success(`User ${email} updated`);
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const handleAddBadge = async (email, badge) => {
+    try {
+      await api.post(`/admin/users/${encodeURIComponent(email)}/badge`, { badge });
+      toast.success(`Badge "${badge}" added`);
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const handleRemoveBadge = async (email, badge) => {
+    try {
+      await api.delete(`/admin/users/${encodeURIComponent(email)}/badge/${encodeURIComponent(badge)}`);
+      toast.success(`Badge "${badge}" removed`);
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const handleTicketStatusChange = async (ticketId, status) => {
+    try {
+      await api.put(`/admin/tickets/${ticketId}/status`, { status });
+      toast.success("Ticket status updated");
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const handleTicketRespond = async (ticketId, response) => {
+    if (!response) return;
+    try {
+      await api.put(`/admin/tickets/${ticketId}/respond`, { response });
+      toast.success("Response sent");
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
 
@@ -326,6 +380,7 @@ export default function Dashboard() {
     { id: "volunteers", label: "Volunteers", icon: Users, count: volunteers.length },
     { id: "queries", label: "Queries", icon: MessageSquare, count: queries.length },
     { id: "messages", label: "Messages", icon: MessageCircle, count: messageThreads.length },
+    { id: "tickets", label: "Tickets", icon: Ticket, count: tickets.length },
     { id: "users", label: "Users", icon: UserCog, count: users.length },
   ];
 
@@ -372,12 +427,13 @@ export default function Dashboard() {
 
           {/* Overview */}
           {activeTab === "overview" && stats && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" data-testid="admin-stats">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4" data-testid="admin-stats">
               <StatCard icon={IndianRupee} label="Total Donations" value={stats.donations.total} sub={`${"\u20B9"}${stats.donations.total_amount.toLocaleString("en-IN")} raised`} color="#FF7F00" />
-              <StatCard icon={CheckCircle} label="Confirmed Donations" value={stats.donations.confirmed} sub={`of ${stats.donations.total} total`} color="#16A34A" />
+              <StatCard icon={CheckCircle} label="Confirmed" value={stats.donations.confirmed} sub={`of ${stats.donations.total}`} color="#16A34A" />
               <StatCard icon={Users} label="Volunteers" value={stats.volunteers.total} sub={`${stats.volunteers.approved} approved`} color="#1E56A0" />
               <StatCard icon={MessageSquare} label="Queries" value={stats.queries.total} sub={`${stats.queries.open} open`} color="#28A9E2" />
-              <StatCard icon={UserCog} label="Registered Users" value={stats.users?.total || 0} color="#7C3AED" />
+              <StatCard icon={Ticket} label="Tickets" value={stats.tickets?.total || 0} sub={`${stats.tickets?.open || 0} open`} color="#DC2626" />
+              <StatCard icon={UserCog} label="Users" value={stats.users?.total || 0} color="#7C3AED" />
             </div>
           )}
 
@@ -458,37 +514,192 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Users Tab */}
+          {/* Tickets Tab */}
+          {activeTab === "tickets" && (
+            <div className="space-y-3" data-testid="admin-tickets-list">
+              {tickets.length === 0 ? <p className="text-center text-slate-400 py-12">No tickets yet.</p> :
+                tickets.map((tk) => (
+                  <div key={tk.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`admin-ticket-${tk.id}`}>
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-medium text-[#0D2847]">{tk.subject}</p>
+                        <p className="text-xs text-slate-400">{tk.user_name} ({tk.user_email}) &middot; {new Date(tk.created_at).toLocaleDateString("en-IN")}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${tk.priority === "high" ? "bg-red-50 text-red-700 border-red-200" : tk.priority === "medium" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>{tk.priority}</span>
+                        <Select value={tk.status} onValueChange={(val) => handleTicketStatusChange(tk.id, val)}>
+                          <SelectTrigger className="h-6 text-[10px] w-28 rounded-lg"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="in-progress">In Progress</SelectItem>
+                            <SelectItem value="responded">Responded</SelectItem>
+                            <SelectItem value="resolved">Resolved</SelectItem>
+                            <SelectItem value="closed">Closed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-600 mb-2 whitespace-pre-wrap">{tk.description}</p>
+                    {tk.admin_response && (
+                      <div className="bg-sky-50 border border-sky-200 rounded-lg p-2 mb-2">
+                        <p className="text-[10px] font-medium text-[#1E56A0]">Admin Response:</p>
+                        <p className="text-xs text-[#0D2847]">{tk.admin_response}</p>
+                      </div>
+                    )}
+                    <button onClick={() => { const resp = window.prompt("Enter your response:"); handleTicketRespond(tk.id, resp); }}
+                      className="text-xs text-[#1E56A0] hover:underline" data-testid={`respond-ticket-${tk.id}`}>
+                      {tk.admin_response ? "Update Response" : "Respond"}
+                    </button>
+                  </div>
+                ))
+              }
+            </div>
+          )}
+
+          {/* Users Tab - Enhanced */}
           {activeTab === "users" && (
             <div className="space-y-3" data-testid="admin-users-list">
               {users.length === 0 ? <p className="text-center text-slate-400 py-12">No users yet.</p> :
                 users.map((u) => (
-                  <div key={u.email} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-9 h-9 rounded-full bg-[#1E56A0]/10 flex items-center justify-center shrink-0">
-                        <UserCog className="w-4 h-4 text-[#1E56A0]" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-[#0D2847] truncate">{u.name} <span className="text-xs text-slate-400 ml-1">({u.role})</span></p>
-                        <p className="text-xs text-slate-400">{u.email} {u.phone ? `| ${u.phone}` : ""}</p>
-                        {u.pan_number && <p className="text-xs text-slate-400">PAN: {u.pan_number} {u.aadhaar_number ? `| Aadhaar: ${u.aadhaar_number}` : ""}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border ${u.role === "admin" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>{u.role}</span>
-                      {u.role !== "admin" && (
-                        <button onClick={() => handleDeleteUser(u.email)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors" data-testid={`delete-user-${u.email}`}>
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <UserAdminCard key={u.email} u={u}
+                    onDelete={handleDeleteUser}
+                    onUpdate={handleAdminUpdateUser}
+                    onAddBadge={handleAddBadge}
+                    onRemoveBadge={handleRemoveBadge}
+                  />
                 ))
               }
             </div>
           )}
         </motion.div>
       </div>
+    </div>
+  );
+}
+
+function UserAdminCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge }) {
+  const [expanded, setExpanded] = useState(false);
+  const [hours, setHours] = useState(u.volunteer_hours || 0);
+  const [comments, setComments] = useState(u.admin_comments || "");
+  const [suspendReason, setSuspendReason] = useState("");
+  const [suspendUntil, setSuspendUntil] = useState("");
+  const [newBadge, setNewBadge] = useState("");
+
+  const AVAILABLE_BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Rising Star", "Community Builder"];
+
+  return (
+    <div className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden" data-testid={`admin-user-${u.email}`}>
+      <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30 transition-colors" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${u.status === "suspended" ? "bg-red-100" : "bg-[#1E56A0]/10"}`}>
+            <UserCog className={`w-4 h-4 ${u.status === "suspended" ? "text-red-500" : "text-[#1E56A0]"}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-[#0D2847] truncate">
+              {u.name} <span className="text-xs text-slate-400 ml-1">({u.role})</span>
+              {u.status === "suspended" && <span className="text-xs text-red-500 ml-1">[SUSPENDED]</span>}
+            </p>
+            <p className="text-xs text-slate-400">{u.email} {u.phone ? `| ${u.phone}` : ""}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-slate-400">{u.volunteer_hours || 0}h</span>
+          <span className="text-xs text-[#FF7F00] font-medium">{"\u20B9"}{(u.total_donated || 0).toLocaleString("en-IN")}</span>
+          {u.merchandise_issued && <Package className="w-3 h-3 text-green-500" />}
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${u.role === "admin" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>{u.role}</span>
+          <Eye className="w-4 h-4 text-slate-300" />
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-4">
+          {/* Identity */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            {u.pan_number && <div><span className="text-slate-400">PAN:</span> <span className="text-slate-700">{u.pan_number}</span></div>}
+            {u.aadhaar_number && <div><span className="text-slate-400">Aadhaar:</span> <span className="text-slate-700">{u.aadhaar_number}</span></div>}
+            {u.address && <div className="col-span-2"><span className="text-slate-400">Address:</span> <span className="text-slate-700">{u.address}</span></div>}
+            <div><span className="text-slate-400">Joined:</span> <span className="text-slate-700">{new Date(u.created_at).toLocaleDateString("en-IN")}</span></div>
+          </div>
+
+          {/* Badges */}
+          <div>
+            <p className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1"><Award className="w-3 h-3" /> Badges</p>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {(u.badges || []).map((b) => (
+                <span key={b} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100">
+                  {b}
+                  <button onClick={() => onRemoveBadge(u.email, b)} className="text-red-400 hover:text-red-600 ml-0.5">&times;</button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-1.5">
+              <select value={newBadge} onChange={(e) => setNewBadge(e.target.value)} className="text-xs border border-sky-100 rounded-lg px-2 py-1">
+                <option value="">Add badge...</option>
+                {AVAILABLE_BADGES.filter((b) => !(u.badges || []).includes(b)).map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              {newBadge && <button onClick={() => { onAddBadge(u.email, newBadge); setNewBadge(""); }} className="text-xs text-[#1E56A0] hover:underline">Add</button>}
+            </div>
+          </div>
+
+          {/* Hours + Merchandise */}
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Volunteer Hours</label>
+              <div className="flex gap-1">
+                <input type="number" value={hours} onChange={(e) => setHours(parseInt(e.target.value) || 0)} className="w-20 text-xs border border-sky-100 rounded-lg px-2 py-1" data-testid={`hours-input-${u.email}`} />
+                <button onClick={() => onUpdate(u.email, { volunteer_hours: hours })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg hover:bg-[#174A8A]">Save</button>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="checkbox" checked={u.merchandise_issued || false} onChange={(e) => onUpdate(u.email, { merchandise_issued: e.target.checked })} className="rounded" data-testid={`merch-checkbox-${u.email}`} />
+              <Package className="w-3 h-3" /> Merchandise Issued
+            </label>
+          </div>
+
+          {/* Admin Comments */}
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Admin Comments</label>
+            <div className="flex gap-1">
+              <textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2} className="flex-1 text-xs border border-sky-100 rounded-lg px-2 py-1 resize-none" data-testid={`comments-input-${u.email}`} />
+              <button onClick={() => onUpdate(u.email, { admin_comments: comments })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg hover:bg-[#174A8A] self-end">Save</button>
+            </div>
+          </div>
+
+          {/* Actions: Promote / Suspend / Delete */}
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-sky-50">
+            {u.role !== "admin" ? (
+              <button onClick={() => { if (window.confirm(`Promote ${u.email} to Admin?`)) onUpdate(u.email, { role: "admin" }); }}
+                className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors" data-testid={`promote-${u.email}`}>
+                <Shield className="w-3 h-3" /> Promote to Admin
+              </button>
+            ) : (
+              <button onClick={() => { if (window.confirm(`Demote ${u.email} to Volunteer?`)) onUpdate(u.email, { role: "volunteer" }); }}
+                className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors" data-testid={`demote-${u.email}`}>
+                <Shield className="w-3 h-3" /> Demote to Volunteer
+              </button>
+            )}
+            {u.status !== "suspended" ? (
+              <div className="flex items-center gap-1">
+                <input placeholder="Reason" value={suspendReason} onChange={(e) => setSuspendReason(e.target.value)} className="text-xs border border-sky-100 rounded-lg px-2 py-1 w-28" />
+                <input type="date" value={suspendUntil} onChange={(e) => setSuspendUntil(e.target.value)} className="text-xs border border-sky-100 rounded-lg px-2 py-1 w-32" />
+                <button onClick={() => { if (window.confirm(`Suspend ${u.email}?`)) onUpdate(u.email, { status: "suspended", suspension_reason: suspendReason, suspended_until: suspendUntil }); }}
+                  className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition-colors" data-testid={`suspend-${u.email}`}>
+                  <PauseCircle className="w-3 h-3" /> Suspend
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => onUpdate(u.email, { status: "active" })}
+                className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors" data-testid={`unsuspend-${u.email}`}>
+                <PlayCircle className="w-3 h-3" /> Unsuspend
+              </button>
+            )}
+            <button onClick={() => onDelete(u.email)}
+              className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors" data-testid={`delete-user-${u.email}`}>
+              <Trash2 className="w-3 h-3" /> Delete
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

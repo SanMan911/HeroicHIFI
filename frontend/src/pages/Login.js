@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
@@ -121,7 +121,12 @@ export default function Login() {
                   {loading ? "..." : t.login_btn}
                 </Button>
               </form>
-              <p className="text-sm text-slate-500 mt-6 text-center">
+              <div className="text-center mt-4">
+                <Link to="/reset-password" className="text-sm text-[#1E56A0] hover:underline" data-testid="forgot-password-link">
+                  {lang === "hi" ? "पासवर्ड भूल गए?" : "Forgot Password?"}
+                </Link>
+              </div>
+              <p className="text-sm text-slate-500 mt-4 text-center">
                 {t.register_prompt}{" "}
                 <button onClick={switchMode} className="text-[#1E56A0] font-medium hover:underline" data-testid="toggle-auth-mode">{t.register_link}</button>
               </p>
