@@ -1,0 +1,56 @@
+# render.yaml — Render Blueprint for Heroic HIFI Foundation
+# Deploy with: https://render.com/deploy → connect GitHub repo
+
+services:
+  # FastAPI Backend
+  - type: web
+    name: heroic-hifi-backend
+    runtime: python
+    region: singapore  # closest to India
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    plan: free  # change to "starter" ($7/mo) for always-on
+    envVars:
+      - key: MONGO_URL
+        sync: false  # you'll paste your MongoDB Atlas connection string
+      - key: DB_NAME
+        value: heroic_hifi
+      - key: JWT_SECRET
+        value: a7f3b2c9d4e5f6a1b8c3d0e7f2a9b4c5d6e1f8a3b0c7d2e9f4a5b6c1d8e3f0
+      - key: RESEND_API_KEY
+        value: re_C4DoEz3H_9MfR5CB4zp9mFGSYHdfRX4Ki
+      - key: SENDER_EMAIL
+        value: noreply@heroichifi.org
+      - key: EMERGENT_LLM_KEY
+        value: sk-emergent-92e7e3bE9E6C161Ef7
+      - key: ADMIN_EMAIL
+        value: admin@heroichifi.org
+      - key: ADMIN_PASSWORD
+        value: HHF@admin2024
+      - key: CORS_ORIGINS
+        value: "*"  # update to your frontend URL after deploy
+      - key: FRONTEND_URL
+        sync: false  # paste your frontend URL after deploy
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
+  # React Frontend (Static Site — always free on Render)
+  - type: web
+    name: heroic-hifi-frontend
+    runtime: static
+    region: singapore
+    rootDir: frontend
+    buildCommand: yarn install && yarn build
+    staticPublishPath: build
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        sync: false  # paste your backend URL after deploy
