@@ -39,7 +39,6 @@ services:
   - type: web
     name: heroic-hifi-frontend
     runtime: static
-    region: singapore
     rootDir: frontend
     buildCommand: yarn install && yarn build
     staticPublishPath: build
