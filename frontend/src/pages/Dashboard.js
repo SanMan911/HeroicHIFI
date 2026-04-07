@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { motion } from "framer-motion";
-import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, AlertTriangle, PauseCircle, PlayCircle } from "lucide-react";
+import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, AlertTriangle, PauseCircle, PlayCircle, Star } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_COLORS = {
@@ -228,6 +228,7 @@ export default function Dashboard() {
   const [users, setUsers] = useState([]);
   const [messageThreads, setMessageThreads] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [wallOfFame, setWallOfFame] = useState([]);
   const [activeAdminThread, setActiveAdminThread] = useState(null);
   const [adminThreadMsgs, setAdminThreadMsgs] = useState([]);
   const [fetching, setFetching] = useState(true);
@@ -238,7 +239,7 @@ export default function Dashboard() {
     if (!isAdmin) { setFetching(false); return; }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/donations"),
         api.get("/admin/volunteers"),
@@ -246,6 +247,7 @@ export default function Dashboard() {
         api.get("/admin/users"),
         api.get("/admin/messages"),
         api.get("/admin/tickets"),
+        api.get("/wall-of-fame"),
       ]);
       setStats(statsRes.data);
       setDonations(donRes.data);
@@ -254,6 +256,7 @@ export default function Dashboard() {
       setUsers(usersRes.data);
       setMessageThreads(msgsRes.data);
       setTickets(ticketsRes.data);
+      setWallOfFame(wofRes.data);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -339,6 +342,21 @@ export default function Dashboard() {
     try {
       await api.put(`/admin/tickets/${ticketId}/respond`, { response });
       toast.success("Response sent");
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const handleToggleWallOfFame = async (email, isOnWall) => {
+    try {
+      if (isOnWall) {
+        await api.delete(`/admin/wall-of-fame/${encodeURIComponent(email)}`);
+        toast.success("Removed from Wall of Fame");
+      } else {
+        await api.post(`/admin/wall-of-fame/${encodeURIComponent(email)}`);
+        toast.success("Added to Wall of Fame!");
+      }
       fetchData();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -566,6 +584,8 @@ export default function Dashboard() {
                     onUpdate={handleAdminUpdateUser}
                     onAddBadge={handleAddBadge}
                     onRemoveBadge={handleRemoveBadge}
+                    isOnWall={wallOfFame.some((w) => w.email === u.email)}
+                    onToggleWall={handleToggleWallOfFame}
                   />
                 ))
               }
@@ -577,7 +597,7 @@ export default function Dashboard() {
   );
 }
 
-function UserAdminCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge }) {
+function UserAdminCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, isOnWall, onToggleWall }) {
   const [expanded, setExpanded] = useState(false);
   const [hours, setHours] = useState(u.volunteer_hours || 0);
   const [comments, setComments] = useState(u.admin_comments || "");
@@ -696,6 +716,11 @@ function UserAdminCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge }) {
             <button onClick={() => onDelete(u.email)}
               className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors" data-testid={`delete-user-${u.email}`}>
               <Trash2 className="w-3 h-3" /> Delete
+            </button>
+            <button onClick={() => onToggleWall(u.email, isOnWall)}
+              className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition-colors ${isOnWall ? "bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300" : "bg-amber-50 text-amber-600 hover:bg-amber-100"}`}
+              data-testid={`wall-toggle-${u.email}`}>
+              <Star className={`w-3 h-3 ${isOnWall ? "fill-amber-500" : ""}`} /> {isOnWall ? "On Wall of Fame" : "Add to Wall of Fame"}
             </button>
           </div>
         </div>

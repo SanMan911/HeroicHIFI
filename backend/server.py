@@ -1116,6 +1116,61 @@ async def admin_stats(user: dict = Depends(require_admin)):
         "tickets": {"total": total_tickets, "open": open_tickets},
     }
 
+# ── Wall of Fame ──
+@api_router.get("/wall-of-fame")
+async def get_wall_of_fame():
+    """Public endpoint — anyone can view the Wall of Fame."""
+    entries = await db.wall_of_fame.find({}, {"_id": 0}).sort("added_at", -1).to_list(100)
+    return entries
+
+@api_router.post("/admin/wall-of-fame/{user_email}")
+async def add_to_wall_of_fame(user_email: str, admin: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    target = await db.users.find_one({"email": email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    existing = await db.wall_of_fame.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="User is already on the Wall of Fame")
+    total_agg = await db.donations.aggregate([
+        {"$match": {"email": email, "status": {"$in": ["confirmed", "pending"]}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    total_donated = total_agg[0]["total"] if total_agg else 0
+    doc = {
+        "email": email, "name": target.get("name", ""), "role": target.get("role", "volunteer"),
+        "volunteer_hours": target.get("volunteer_hours", 0), "total_donated": total_donated,
+        "badges": target.get("badges", []), "profile_pic_path": target.get("profile_pic_path", ""),
+        "contribution_summary": "", "added_by": admin["email"],
+        "added_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.wall_of_fame.insert_one(doc)
+    doc.pop("_id", None)
+    await log_activity("wall_of_fame_added", "user", email, admin["email"], "Added to Wall of Fame", "")
+    return {"message": f"{target.get('name', email)} added to the Wall of Fame!", "entry": doc}
+
+@api_router.delete("/admin/wall-of-fame/{user_email}")
+async def remove_from_wall_of_fame(user_email: str, admin: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    result = await db.wall_of_fame.delete_one({"email": email})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not on the Wall of Fame")
+    await log_activity("wall_of_fame_removed", "user", email, admin["email"], "Removed from Wall of Fame", "")
+    return {"message": "Removed from the Wall of Fame"}
+
+@api_router.put("/admin/wall-of-fame/{user_email}")
+async def update_wall_entry(user_email: str, data: dict, admin: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    updates = {}
+    if "contribution_summary" in data:
+        updates["contribution_summary"] = data["contribution_summary"]
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    result = await db.wall_of_fame.update_one({"email": email}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not on the Wall of Fame")
+    return {"message": "Wall of Fame entry updated"}
+
 # ── Health ──
 @api_router.get("/health")
 async def health():

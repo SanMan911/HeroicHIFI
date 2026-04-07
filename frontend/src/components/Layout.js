@@ -18,6 +18,7 @@ export function Header() {
     { to: "/", label: t.home },
     { to: "/about", label: t.about },
     { to: "/missions", label: t.missions },
+    { to: "/wall-of-fame", label: lang === "hi" ? "गौरव पट" : "Wall of Fame" },
     { to: "/volunteer", label: t.volunteer },
     { to: "/contact", label: t.contact },
   ];

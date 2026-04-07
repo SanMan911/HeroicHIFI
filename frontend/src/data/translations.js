@@ -243,6 +243,12 @@ const translations = {
       fill_required: "Please fill all required fields.",
       admin_response: "Admin Response",
     },
+    wall_of_fame: {
+      overline: "Honouring Our Heroes",
+      title: "Wall of Fame",
+      subtitle: "Celebrating the extraordinary individuals whose selfless contributions have shaped our mission and touched countless lives.",
+      empty: "The Wall of Fame awaits its first heroes.",
+    },
     dashboard: {
       title: "Dashboard",
       welcome: "Welcome",
@@ -501,6 +507,12 @@ const translations = {
       no_tickets: "आपने अभी तक कोई टिकट नहीं बनाया है।",
       fill_required: "कृपया सभी आवश्यक फ़ील्ड भरें।",
       admin_response: "प्रशासक का उत्तर",
+    },
+    wall_of_fame: {
+      overline: "हमारे नायकों को सम्मान",
+      title: "गौरव पट",
+      subtitle: "उन असाधारण व्यक्तियों का सम्मान जिनके निःस्वार्थ योगदान ने हमारे मिशन को आकार दिया और अनगिनत जीवन को स्पर्श किया।",
+      empty: "गौरव पट अपने पहले नायकों की प्रतीक्षा कर रहा है।",
     },
     dashboard: {
       title: "डैशबोर्ड",
