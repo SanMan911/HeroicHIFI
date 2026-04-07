@@ -40,7 +40,7 @@ services:
     name: heroic-hifi-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: yarn install && yarn build
+    buildCommand: CI=false yarn install && yarn build
     staticPublishPath: build
     headers:
       - path: /*
