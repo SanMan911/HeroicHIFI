@@ -40,7 +40,7 @@ services:
     name: heroic-hifi-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: CI=false yarn install && yarn build
+    buildCommand: npm install --legacy-peer-deps && CI=false npm run build
     staticPublishPath: build
     headers:
       - path: /*
