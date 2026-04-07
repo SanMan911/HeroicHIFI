@@ -35,9 +35,10 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.0"
 
-staticSites:
-  # React Frontend (always free on Render)
-  - name: heroic-hifi-frontend
+  # React Frontend (Static Site — always free on Render)
+  - type: web
+    name: heroic-hifi-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: yarn install && yarn build
     staticPublishPath: build
