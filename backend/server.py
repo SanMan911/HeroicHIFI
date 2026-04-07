@@ -729,12 +729,15 @@ async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict
 @api_router.get("/admin/users")
 async def admin_list_users(user: dict = Depends(require_admin)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    donation_totals = {}
+    agg = await db.donations.aggregate([
+        {"$match": {"status": {"$in": ["confirmed", "pending"]}}},
+        {"$group": {"_id": "$email", "total": {"$sum": "$amount"}}}
+    ]).to_list(1000)
+    for entry in agg:
+        donation_totals[entry["_id"]] = entry["total"]
     for u in users:
-        total_agg = await db.donations.aggregate([
-            {"$match": {"email": u["email"], "status": {"$in": ["confirmed", "pending"]}}},
-            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
-        ]).to_list(1)
-        u["total_donated"] = total_agg[0]["total"] if total_agg else 0
+        u["total_donated"] = donation_totals.get(u["email"], 0)
     return users
 
 @api_router.delete("/admin/users/{user_email}")
@@ -861,7 +864,7 @@ async def admin_get_thread(email1: str, email2: str, user: dict = Depends(requir
 # ── Password Reset ──
 async def send_reset_email(email: str, token: str):
     api_key = os.environ.get("RESEND_API_KEY", "")
-    frontend_url = os.environ.get("FRONTEND_URL", "https://hifi-donor-portal.preview.emergentagent.com")
+    frontend_url = os.environ.get("FRONTEND_URL")
     reset_link = f"{frontend_url}/reset-password?token={token}&email={email}"
     if not api_key or not resend:
         logger.info(f"[RESET MOCK] Email: {email}, Token: {token}, Link: {reset_link}")
