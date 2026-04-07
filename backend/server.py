@@ -38,6 +38,31 @@ try:
 except ImportError:
     resend = None
 
+import re
+
+# ── Number Stripping Utility ──
+NUMBER_WORDS = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+    "hundred", "thousand", "million", "billion", "trillion",
+    "lakh", "lakhs", "crore", "crores",
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+    "\u0936\u0942\u0928\u094d\u092f", "\u090f\u0915", "\u0926\u094b", "\u0924\u0940\u0928", "\u091a\u093e\u0930", "\u092a\u093e\u0901\u091a", "\u091b\u0939", "\u0938\u093e\u0924", "\u0906\u0920", "\u0928\u094c", "\u0926\u0938",
+    "\u0917\u094d\u092f\u093e\u0930\u0939", "\u092c\u093e\u0930\u0939", "\u0924\u0947\u0930\u0939", "\u091a\u094c\u0926\u0939", "\u092a\u0902\u0926\u094d\u0930\u0939", "\u0938\u094b\u0932\u0939", "\u0938\u0924\u094d\u0930\u0939", "\u0905\u0920\u093e\u0930\u0939", "\u0909\u0928\u094d\u0928\u0940\u0938",
+    "\u092c\u0940\u0938", "\u0924\u0940\u0938", "\u091a\u093e\u0932\u0940\u0938", "\u092a\u091a\u093e\u0938", "\u0938\u093e\u0920", "\u0938\u0924\u094d\u0924\u0930", "\u0905\u0920\u094d\u0920\u093e\u0930\u0939", "\u0928\u092c\u094d\u092c\u0947",
+    "\u0938\u094c", "\u0939\u091c\u093c\u093e\u0930", "\u0932\u093e\u0916", "\u0915\u0930\u094b\u0921\u093c",
+]
+
+def strip_numbers(text: str) -> str:
+    if not text:
+        return text
+    result = re.sub(r'\d+', '[*]', text)
+    for word in NUMBER_WORDS:
+        pattern = re.compile(re.escape(word), re.IGNORECASE)
+        result = pattern.sub('[*]', result)
+    return result
+
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
@@ -612,6 +637,116 @@ async def admin_delete_user(user_email: str, user: dict = Depends(require_admin)
         raise HTTPException(status_code=404, detail="User not found")
     await log_activity("user_deleted", "user", email, user["email"], f"Deleted user: {email}", "")
     return {"message": f"User {email} deleted successfully"}
+
+# ── Directory (public members list) ──
+@api_router.get("/directory")
+async def get_directory(user: dict = Depends(get_current_user)):
+    members = await db.users.find(
+        {"role": {"$ne": "admin"}},
+        {"_id": 0, "password_hash": 0, "pan_number": 0, "aadhaar_number": 0, "address": 0, "dob": 0, "age": 0}
+    ).sort("created_at", -1).to_list(500)
+    return members
+
+# ── Messaging ──
+class MessageInput(BaseModel):
+    recipient_email: str
+    message: str
+
+@api_router.post("/messages")
+async def send_message(data: MessageInput, request: Request, user: dict = Depends(get_current_user)):
+    recipient = await db.users.find_one({"email": data.recipient_email.lower().strip()})
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    if data.recipient_email.lower().strip() == user["email"]:
+        raise HTTPException(status_code=400, detail="Cannot send message to yourself")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "sender_email": user["email"],
+        "sender_name": user.get("name", ""),
+        "recipient_email": data.recipient_email.lower().strip(),
+        "recipient_name": recipient.get("name", ""),
+        "message": data.message,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.messages.insert_one(doc)
+    doc.pop("_id", None)
+    await log_activity("message_sent", "message", doc["id"], user["email"], f"To: {data.recipient_email}", request.client.host if request.client else "")
+    return {"message": "Message sent successfully", "data": doc}
+
+@api_router.get("/messages/conversations")
+async def get_conversations(user: dict = Depends(get_current_user)):
+    email = user["email"]
+    pipeline = [
+        {"$match": {"$or": [{"sender_email": email}, {"recipient_email": email}]}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": {"$cond": [{"$eq": ["$sender_email", email]}, "$recipient_email", "$sender_email"]},
+            "last_message": {"$first": "$message"},
+            "last_time": {"$first": "$created_at"},
+            "other_name": {"$first": {"$cond": [{"$eq": ["$sender_email", email]}, "$recipient_name", "$sender_name"]}},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"last_time": -1}},
+        {"$project": {"_id": 0, "email": "$_id", "name": "$other_name", "last_message": 1, "last_time": 1, "count": 1}}
+    ]
+    convos = await db.messages.aggregate(pipeline).to_list(100)
+    for c in convos:
+        c["last_message_preview"] = strip_numbers(c["last_message"])[:80] if c.get("last_message") else ""
+    return convos
+
+@api_router.get("/messages/thread/{other_email}")
+async def get_thread(other_email: str, user: dict = Depends(get_current_user)):
+    email = user["email"]
+    other = other_email.lower().strip()
+    msgs = await db.messages.find(
+        {"$or": [
+            {"sender_email": email, "recipient_email": other},
+            {"sender_email": other, "recipient_email": email}
+        ]},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(500)
+    for m in msgs:
+        if m["recipient_email"] == email:
+            m["message"] = strip_numbers(m["message"])
+    return msgs
+
+# ── Admin Messages ──
+@api_router.get("/admin/messages")
+async def admin_list_conversations(user: dict = Depends(require_admin)):
+    pipeline = [
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": {
+                "pair": {"$cond": [
+                    {"$lt": ["$sender_email", "$recipient_email"]},
+                    {"$concat": ["$sender_email", "||", "$recipient_email"]},
+                    {"$concat": ["$recipient_email", "||", "$sender_email"]}
+                ]}
+            },
+            "last_message": {"$first": "$message"},
+            "last_time": {"$first": "$created_at"},
+            "sender": {"$first": "$sender_name"},
+            "recipient": {"$first": "$recipient_name"},
+            "sender_email": {"$first": "$sender_email"},
+            "recipient_email": {"$first": "$recipient_email"},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"last_time": -1}},
+        {"$project": {"_id": 0, "pair": "$_id.pair", "last_message": 1, "last_time": 1, "sender": 1, "recipient": 1, "sender_email": 1, "recipient_email": 1, "count": 1}}
+    ]
+    return await db.messages.aggregate(pipeline).to_list(200)
+
+@api_router.get("/admin/messages/thread/{email1}/{email2}")
+async def admin_get_thread(email1: str, email2: str, user: dict = Depends(require_admin)):
+    e1, e2 = email1.lower().strip(), email2.lower().strip()
+    msgs = await db.messages.find(
+        {"$or": [
+            {"sender_email": e1, "recipient_email": e2},
+            {"sender_email": e2, "recipient_email": e1}
+        ]},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(500)
+    return msgs
 
 # ── Health ──
 @api_router.get("/health")

@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 class HeroicHIFIAPITester:
-    def __init__(self, base_url="https://hifi-missions-hub.preview.emergentagent.com"):
+    def __init__(self, base_url="https://hifi-donor-portal.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0
