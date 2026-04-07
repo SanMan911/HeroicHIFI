@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends
+from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -13,12 +14,30 @@ import bcrypt
 import jwt
 import uuid
 import secrets
+import asyncio
+import random
+import io
 from datetime import datetime, timezone, timedelta
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel
 from typing import List, Optional
 from bson import ObjectId
 
-# MongoDB connection
+# ── PDF imports ──
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm, cm
+from reportlab.lib.colors import HexColor
+from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.platypus import Paragraph
+from reportlab.lib.styles import ParagraphStyle
+
+# ── Resend import ──
+try:
+    import resend
+    resend.api_key = os.environ.get("RESEND_API_KEY", "")
+except ImportError:
+    resend = None
+
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
@@ -26,33 +45,42 @@ db = client[os.environ['DB_NAME']]
 app = FastAPI(title="Heroic HIFI Foundation API")
 api_router = APIRouter(prefix="/api")
 
-# JWT config
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 JWT_ALGORITHM = "HS256"
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
 
 def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
-# Password helpers
+# ── Activity Logging ──
+async def log_activity(action: str, entity_type: str, entity_id: str = "", user_email: str = "", details: str = "", ip: str = ""):
+    await db.activity_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "user_email": user_email,
+        "details": details,
+        "ip": ip,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+# ── Password helpers ──
 def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 def create_access_token(user_id: str, email: str) -> str:
-    payload = {
-        "sub": user_id, "email": email,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
-        "type": "access"
-    }
+    payload = {"sub": user_id, "email": email, "exp": datetime.now(timezone.utc) + timedelta(hours=24), "type": "access"}
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request) -> dict:
     auth_header = request.headers.get("Authorization", "")
-    token = None
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
+    token = auth_header[7:] if auth_header.startswith("Bearer ") else None
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -70,11 +98,39 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+async def get_current_user_optional(request: Request):
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
+
+async def require_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
 # ── Models ──
+class OTPRequest(BaseModel):
+    email: str
+    purpose: str = "registration"
+
+class OTPVerify(BaseModel):
+    email: str
+    otp: str
+    purpose: str = "registration"
+
 class RegisterInput(BaseModel):
     name: str
     email: str
     password: str
+    phone: str
+    age: Optional[int] = None
+    dob: Optional[str] = None
+    address: Optional[str] = None
+    pan_number: str
+    aadhaar_number: str
+    otp_token: str
 
 class LoginInput(BaseModel):
     email: str
@@ -85,8 +141,11 @@ class DonationInput(BaseModel):
     email: str
     phone: str
     amount: int
-    pan_number: Optional[str] = None
+    pan_number: str
+    aadhaar_number: Optional[str] = None
+    address: Optional[str] = None
     message: Optional[str] = None
+    otp_token: Optional[str] = None
 
 class VolunteerInput(BaseModel):
     name: str
@@ -103,40 +162,118 @@ class QueryInput(BaseModel):
     subject: str
     message: str
 
+class StatusUpdate(BaseModel):
+    status: str
+
+# ── OTP Endpoints ──
+async def send_otp_email(email: str, otp: str):
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key or not resend:
+        logger.info(f"[OTP MOCK] Email: {email}, OTP: {otp}")
+        return False
+    try:
+        resend.api_key = api_key
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [email],
+            "subject": "Heroic HIFI Foundation - Email Verification OTP",
+            "html": f"""
+            <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+                <h2 style="color:#1E56A0;">Heroic HIFI Foundation</h2>
+                <p>Your email verification code is:</p>
+                <div style="background:#F0F7FA;padding:20px;text-align:center;border-radius:12px;margin:20px 0;">
+                    <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#1E56A0;">{otp}</span>
+                </div>
+                <p style="color:#666;font-size:13px;">This code expires in 10 minutes. If you did not request this, please ignore this email.</p>
+            </div>
+            """
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True
+    except Exception as e:
+        logger.error(f"Resend email error: {e}")
+        return False
+
+@api_router.post("/auth/send-otp")
+async def send_otp(data: OTPRequest, request: Request):
+    email = data.email.lower().strip()
+    otp = str(random.randint(100000, 999999))
+    token = secrets.token_hex(32)
+    await db.otp_tokens.delete_many({"email": email, "purpose": data.purpose})
+    await db.otp_tokens.insert_one({
+        "email": email,
+        "otp": otp,
+        "purpose": data.purpose,
+        "token": token,
+        "verified": False,
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10)
+    })
+    sent = await send_otp_email(email, otp)
+    await log_activity("otp_sent", "auth", "", email, f"OTP sent for {data.purpose}, email_delivered={sent}", request.client.host if request.client else "")
+    msg = "OTP sent to your email." if sent else "OTP generated. Check server logs (Resend API key not configured)."
+    return {"message": msg, "email_sent": sent, "otp_debug": otp if not sent else None}
+
+@api_router.post("/auth/verify-otp")
+async def verify_otp(data: OTPVerify, request: Request):
+    email = data.email.lower().strip()
+    record = await db.otp_tokens.find_one({"email": email, "purpose": data.purpose, "verified": False})
+    if not record:
+        raise HTTPException(status_code=400, detail="No pending OTP found. Please request a new one.")
+    expires_at = record["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+    elif expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+    if record["otp"] != data.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP. Please try again.")
+    await db.otp_tokens.update_one({"_id": record["_id"]}, {"$set": {"verified": True}})
+    await log_activity("otp_verified", "auth", "", email, f"OTP verified for {data.purpose}", request.client.host if request.client else "")
+    return {"message": "Email verified successfully.", "otp_token": record["token"]}
+
 # ── Auth Routes ──
 @api_router.post("/auth/register")
-async def register(data: RegisterInput):
+async def register(data: RegisterInput, request: Request):
     email = data.email.lower().strip()
+    otp_record = await db.otp_tokens.find_one({"email": email, "token": data.otp_token, "purpose": "registration", "verified": True})
+    if not otp_record:
+        raise HTTPException(status_code=400, detail="Email not verified. Please complete OTP verification first.")
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    hashed = hash_password(data.password)
     doc = {
-        "name": data.name,
-        "email": email,
-        "password_hash": hashed,
-        "role": "volunteer",
+        "name": data.name, "email": email,
+        "password_hash": hash_password(data.password),
+        "phone": data.phone, "age": data.age, "dob": data.dob,
+        "address": data.address, "pan_number": data.pan_number,
+        "aadhaar_number": data.aadhaar_number,
+        "role": "volunteer", "email_verified": True,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.users.insert_one(doc)
     user_id = str(result.inserted_id)
     token = create_access_token(user_id, email)
-    return {"token": token, "user": {"id": user_id, "name": data.name, "email": email, "role": "volunteer"}}
+    await db.otp_tokens.delete_many({"email": email, "purpose": "registration"})
+    await log_activity("user_registered", "user", user_id, email, f"New user: {data.name}", request.client.host if request.client else "")
+    return {"token": token, "user": {"id": user_id, "name": data.name, "email": email, "role": "volunteer", "phone": data.phone, "pan_number": data.pan_number, "aadhaar_number": data.aadhaar_number, "address": data.address, "age": data.age, "dob": data.dob}}
 
 @api_router.post("/auth/login")
-async def login(data: LoginInput):
+async def login(data: LoginInput, request: Request):
     email = data.email.lower().strip()
     user = await db.users.find_one({"email": email})
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    if not verify_password(data.password, user["password_hash"]):
+    if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     user_id = str(user["_id"])
     token = create_access_token(user_id, email)
-    return {
-        "token": token,
-        "user": {"id": user_id, "name": user.get("name", ""), "email": email, "role": user.get("role", "volunteer")}
-    }
+    await log_activity("user_login", "user", user_id, email, "Login successful", request.client.host if request.client else "")
+    return {"token": token, "user": {
+        "id": user_id, "name": user.get("name", ""), "email": email, "role": user.get("role", "volunteer"),
+        "phone": user.get("phone", ""), "pan_number": user.get("pan_number", ""), "aadhaar_number": user.get("aadhaar_number", ""),
+        "address": user.get("address", ""), "age": user.get("age"), "dob": user.get("dob", ""),
+    }}
 
 @api_router.get("/auth/me")
 async def get_me(user: dict = Depends(get_current_user)):
@@ -146,92 +283,15 @@ async def get_me(user: dict = Depends(get_current_user)):
 async def logout():
     return {"message": "Logged out successfully"}
 
-# ── Missions Routes ──
+# ── Missions Data ──
 MISSIONS_DATA = [
-    {
-        "slug": "mission-shakti",
-        "name": "Mission Shakti",
-        "name_hi": "मिशन शक्ति",
-        "tagline": "Empowering Women, Transforming Communities",
-        "tagline_hi": "नारी सशक्तिकरण, समुदाय का कायाकल्प",
-        "description": "Mission Shakti is dedicated to empowering women across rural and urban India through skill development, financial literacy, and leadership training. We believe that when women rise, entire communities are uplifted.",
-        "description_hi": "मिशन शक्ति ग्रामीण एवं शहरी भारत में कौशल विकास, वित्तीय साक्षरता और नेतृत्व प्रशिक्षण के माध्यम से महिलाओं के सशक्तिकरण हेतु समर्पित है। हमारा विश्वास है कि जब नारी उत्थान होता है, तो पूरा समुदाय ऊपर उठता है।",
-        "icon": "Sparkles",
-        "color": "#EA580C",
-        "image_key": "mission_shakti_women"
-    },
-    {
-        "slug": "mission-swabhiman",
-        "name": "Mission Swabhiman",
-        "name_hi": "मिशन स्वाभिमान",
-        "tagline": "Dignity Through Menstrual Hygiene Awareness",
-        "tagline_hi": "मासिक धर्म स्वच्छता जागरूकता द्वारा सम्मान",
-        "description": "Mission Swabhiman raises awareness about female menstrual hygiene, breaking taboos and ensuring every woman has access to safe, hygienic products. We conduct workshops in schools, colleges and rural communities.",
-        "description_hi": "मिशन स्वाभिमान महिला मासिक धर्म स्वच्छता के बारे में जागरूकता बढ़ाता है, वर्जनाओं को तोड़ता है और सुनिश्चित करता है कि प्रत्येक महिला को सुरक्षित, स्वच्छ उत्पादों तक पहुँच मिले। हम विद्यालयों, महाविद्यालयों और ग्रामीण समुदायों में कार्यशालाएँ आयोजित करते हैं।",
-        "icon": "Heart",
-        "color": "#DB2777",
-        "image_key": "mission_swabhiman_health"
-    },
-    {
-        "slug": "mission-roshni",
-        "name": "Mission Roshni",
-        "name_hi": "मिशन रोशनी",
-        "tagline": "Illuminating Futures Through Education",
-        "tagline_hi": "शिक्षा द्वारा भविष्य को रोशन करना",
-        "description": "Mission Roshni brings the light of education to children and students from slum areas and underprivileged communities. We provide free tutoring, school supplies, and mentorship to help children dream bigger.",
-        "description_hi": "मिशन रोशनी झुग्गी-बस्तियों और वंचित समुदायों के बच्चों एवं विद्यार्थियों तक शिक्षा की ज्योति पहुँचाता है। हम बच्चों को बड़े सपने देखने में सहायता करने हेतु निःशुल्क शिक्षण, विद्यालय सामग्री और मार्गदर्शन प्रदान करते हैं।",
-        "icon": "BookOpen",
-        "color": "#2563EB",
-        "image_key": "mission_roshni_education"
-    },
-    {
-        "slug": "mission-koi-bhookha-na-soye",
-        "name": "Mission Koi Bhookha Na Soye",
-        "name_hi": "मिशन कोई भूखा न सोए",
-        "tagline": "No One Sleeps Hungry",
-        "tagline_hi": "कोई भूखा न सोए",
-        "description": "This mission collects excess food from hotels, restaurants, weddings, and events, and distributes it among the destitute, homeless, and hungry. We work to ensure that no edible food goes to waste while people go hungry.",
-        "description_hi": "यह मिशन होटलों, रेस्तराँओं, विवाहों और आयोजनों से अतिरिक्त भोजन एकत्र करता है और इसे बेसहारा, बेघर और भूखे लोगों में वितरित करता है। हम यह सुनिश्चित करने का प्रयास करते हैं कि कोई भी खाने योग्य भोजन बर्बाद न हो जबकि लोग भूखे रहें।",
-        "icon": "UtensilsCrossed",
-        "color": "#D97706",
-        "image_key": "mission_koibhookhanasoye_food"
-    },
-    {
-        "slug": "mission-paryavaran",
-        "name": "Mission Paryavaran",
-        "name_hi": "मिशन पर्यावरण",
-        "tagline": "Nurturing Nature, Securing Tomorrow",
-        "tagline_hi": "प्रकृति का पोषण, कल की सुरक्षा",
-        "description": "Mission Paryavaran is committed to raising awareness about the environment and cleanliness. Through tree plantation drives, clean-up campaigns, and educational programs, we strive to create a greener, cleaner world.",
-        "description_hi": "मिशन पर्यावरण पर्यावरण एवं स्वच्छता के बारे में जागरूकता बढ़ाने हेतु प्रतिबद्ध है। वृक्षारोपण अभियानों, स्वच्छता अभियानों और शैक्षिक कार्यक्रमों के माध्यम से हम एक हरित, स्वच्छ संसार बनाने का प्रयास करते हैं।",
-        "icon": "TreePine",
-        "color": "#16A34A",
-        "image_key": "mission_paryavaran_environment"
-    },
-    {
-        "slug": "mission-karuna",
-        "name": "Mission Karuna",
-        "name_hi": "मिशन करुणा",
-        "tagline": "Compassion for Every Living Being",
-        "tagline_hi": "प्रत्येक प्राणी के प्रति करुणा",
-        "description": "Mission Karuna empathizes with voiceless animals. We raise awareness and fight against animal cruelty, conduct rescue operations, and advocate for humane treatment of all animals, strays and domesticated alike.",
-        "description_hi": "मिशन करुणा मूक प्राणियों के प्रति सहानुभूति रखता है। हम पशु क्रूरता के विरुद्ध जागरूकता बढ़ाते हैं और लड़ते हैं, बचाव अभियान चलाते हैं, तथा सभी पशुओं—आवारा एवं पालतू दोनों—के मानवीय व्यवहार की पैरवी करते हैं।",
-        "icon": "PawPrint",
-        "color": "#7C3AED",
-        "image_key": "mission_karuna_animals"
-    },
-    {
-        "slug": "mission-paridhan",
-        "name": "Mission Paridhan",
-        "name_hi": "मिशन परिधान",
-        "tagline": "Clothing the Needy, Wrapping with Dignity",
-        "tagline_hi": "वस्त्रदान, सम्मान का आवरण",
-        "description": "Mission Paridhan collects donated clothes and distributes them among beggars and the needy. Clothing is a basic necessity and through this mission, we aim to restore dignity and provide warmth to the underprivileged.",
-        "description_hi": "मिशन परिधान दान में प्राप्त वस्त्रों को एकत्र करता है और उन्हें भिक्षुकों एवं जरूरतमंदों में वितरित करता है। वस्त्र एक मूलभूत आवश्यकता है और इस मिशन के माध्यम से हम वंचितों को सम्मान और ऊष्मा प्रदान करने का लक्ष्य रखते हैं।",
-        "icon": "Shirt",
-        "color": "#0891B2",
-        "image_key": "mission_paridhan_clothes"
-    }
+    {"slug": "mission-shakti", "name": "Mission Shakti", "name_hi": "\u092e\u093f\u0936\u0928 \u0936\u0915\u094d\u0924\u093f", "tagline": "Empowering Women, Transforming Communities", "tagline_hi": "\u0928\u093e\u0930\u0940 \u0938\u0936\u0915\u094d\u0924\u093f\u0915\u0930\u0923, \u0938\u092e\u0941\u0926\u093e\u092f \u0915\u093e \u0915\u093e\u092f\u093e\u0915\u0932\u094d\u092a", "description": "Mission Shakti is dedicated to empowering women across rural and urban India through skill development, financial literacy, and leadership training. We believe that when women rise, entire communities are uplifted.", "description_hi": "\u092e\u093f\u0936\u0928 \u0936\u0915\u094d\u0924\u093f \u0917\u094d\u0930\u093e\u092e\u0940\u0923 \u090f\u0935\u0902 \u0936\u0939\u0930\u0940 \u092d\u093e\u0930\u0924 \u092e\u0947\u0902 \u0915\u094c\u0936\u0932 \u0935\u093f\u0915\u093e\u0938, \u0935\u093f\u0924\u094d\u0924\u0940\u092f \u0938\u093e\u0915\u094d\u0937\u0930\u0924\u093e \u0914\u0930 \u0928\u0947\u0924\u0943\u0924\u094d\u0935 \u092a\u094d\u0930\u0936\u093f\u0915\u094d\u0937\u0923 \u0915\u0947 \u092e\u093e\u0927\u094d\u092f\u092e \u0938\u0947 \u092e\u0939\u093f\u0932\u093e\u0913\u0902 \u0915\u0947 \u0938\u0936\u0915\u094d\u0924\u093f\u0915\u0930\u0923 \u0939\u0947\u0924\u0941 \u0938\u092e\u0930\u094d\u092a\u093f\u0924 \u0939\u0948\u0964", "icon": "Sparkles", "color": "#EA580C", "image_key": "mission_shakti_women"},
+    {"slug": "mission-swabhiman", "name": "Mission Swabhiman", "name_hi": "\u092e\u093f\u0936\u0928 \u0938\u094d\u0935\u093e\u092d\u093f\u092e\u093e\u0928", "tagline": "Dignity Through Menstrual Hygiene Awareness", "tagline_hi": "\u092e\u093e\u0938\u093f\u0915 \u0927\u0930\u094d\u092e \u0938\u094d\u0935\u091a\u094d\u091b\u0924\u093e \u091c\u093e\u0917\u0930\u0942\u0915\u0924\u093e \u0926\u094d\u0935\u093e\u0930\u093e \u0938\u092e\u094d\u092e\u093e\u0928", "description": "Mission Swabhiman raises awareness about female menstrual hygiene, breaking taboos and ensuring every woman has access to safe, hygienic products.", "description_hi": "\u092e\u093f\u0936\u0928 \u0938\u094d\u0935\u093e\u092d\u093f\u092e\u093e\u0928 \u092e\u0939\u093f\u0932\u093e \u092e\u093e\u0938\u093f\u0915 \u0927\u0930\u094d\u092e \u0938\u094d\u0935\u091a\u094d\u091b\u0924\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u091c\u093e\u0917\u0930\u0942\u0915\u0924\u093e \u092c\u0922\u093c\u093e\u0924\u093e \u0939\u0948\u0964", "icon": "Heart", "color": "#DB2777", "image_key": "mission_swabhiman_health"},
+    {"slug": "mission-roshni", "name": "Mission Roshni", "name_hi": "\u092e\u093f\u0936\u0928 \u0930\u094b\u0936\u0928\u0940", "tagline": "Illuminating Futures Through Education", "tagline_hi": "\u0936\u093f\u0915\u094d\u0937\u093e \u0926\u094d\u0935\u093e\u0930\u093e \u092d\u0935\u093f\u0937\u094d\u092f \u0915\u094b \u0930\u094b\u0936\u0928 \u0915\u0930\u0928\u093e", "description": "Mission Roshni brings the light of education to children and students from slum areas and underprivileged communities.", "description_hi": "\u092e\u093f\u0936\u0928 \u0930\u094b\u0936\u0928\u0940 \u091d\u0941\u0917\u094d\u0917\u0940-\u092c\u0938\u094d\u0924\u093f\u092f\u094b\u0902 \u0914\u0930 \u0935\u0902\u091a\u093f\u0924 \u0938\u092e\u0941\u0926\u093e\u092f\u094b\u0902 \u0915\u0947 \u092c\u091a\u094d\u091a\u094b\u0902 \u0924\u0915 \u0936\u093f\u0915\u094d\u0937\u093e \u0915\u0940 \u091c\u094d\u092f\u094b\u0924\u093f \u092a\u0939\u0941\u0901\u091a\u093e\u0924\u093e \u0939\u0948\u0964", "icon": "BookOpen", "color": "#2563EB", "image_key": "mission_roshni_education"},
+    {"slug": "mission-koi-bhookha-na-soye", "name": "Mission Koi Bhookha Na Soye", "name_hi": "\u092e\u093f\u0936\u0928 \u0915\u094b\u0908 \u092d\u0942\u0916\u093e \u0928 \u0938\u094b\u090f", "tagline": "No One Sleeps Hungry", "tagline_hi": "\u0915\u094b\u0908 \u092d\u0942\u0916\u093e \u0928 \u0938\u094b\u090f", "description": "This mission collects excess food from hotels, restaurants, weddings, and events, and distributes it among the destitute, homeless, and hungry.", "description_hi": "\u092f\u0939 \u092e\u093f\u0936\u0928 \u0939\u094b\u091f\u0932\u094b\u0902, \u0930\u0947\u0938\u094d\u0924\u0930\u093e\u0901\u0913\u0902, \u0935\u093f\u0935\u093e\u0939\u094b\u0902 \u0938\u0947 \u0905\u0924\u093f\u0930\u093f\u0915\u094d\u0924 \u092d\u094b\u091c\u0928 \u090f\u0915\u0924\u094d\u0930 \u0915\u0930\u0924\u093e \u0939\u0948\u0964", "icon": "UtensilsCrossed", "color": "#D97706", "image_key": "mission_koibhookhanasoye_food"},
+    {"slug": "mission-paryavaran", "name": "Mission Paryavaran", "name_hi": "\u092e\u093f\u0936\u0928 \u092a\u0930\u094d\u092f\u093e\u0935\u0930\u0923", "tagline": "Nurturing Nature, Securing Tomorrow", "tagline_hi": "\u092a\u094d\u0930\u0915\u0943\u0924\u093f \u0915\u093e \u092a\u094b\u0937\u0923, \u0915\u0932 \u0915\u0940 \u0938\u0941\u0930\u0915\u094d\u0937\u093e", "description": "Mission Paryavaran is committed to raising awareness about the environment and cleanliness.", "description_hi": "\u092e\u093f\u0936\u0928 \u092a\u0930\u094d\u092f\u093e\u0935\u0930\u0923 \u092a\u0930\u094d\u092f\u093e\u0935\u0930\u0923 \u090f\u0935\u0902 \u0938\u094d\u0935\u091a\u094d\u091b\u0924\u093e \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u091c\u093e\u0917\u0930\u0942\u0915\u0924\u093e \u092c\u0922\u093c\u093e\u0928\u0947 \u0939\u0947\u0924\u0941 \u092a\u094d\u0930\u0924\u093f\u092c\u0926\u094d\u0927 \u0939\u0948\u0964", "icon": "TreePine", "color": "#16A34A", "image_key": "mission_paryavaran_environment"},
+    {"slug": "mission-karuna", "name": "Mission Karuna", "name_hi": "\u092e\u093f\u0936\u0928 \u0915\u0930\u0941\u0923\u093e", "tagline": "Compassion for Every Living Being", "tagline_hi": "\u092a\u094d\u0930\u0924\u094d\u092f\u0947\u0915 \u092a\u094d\u0930\u093e\u0923\u0940 \u0915\u0947 \u092a\u094d\u0930\u0924\u093f \u0915\u0930\u0941\u0923\u093e", "description": "Mission Karuna empathizes with voiceless animals. We raise awareness and fight against animal cruelty.", "description_hi": "\u092e\u093f\u0936\u0928 \u0915\u0930\u0941\u0923\u093e \u092e\u0942\u0915 \u092a\u094d\u0930\u093e\u0923\u093f\u092f\u094b\u0902 \u0915\u0947 \u092a\u094d\u0930\u0924\u093f \u0938\u0939\u093e\u0928\u0941\u092d\u0942\u0924\u093f \u0930\u0916\u0924\u093e \u0939\u0948\u0964", "icon": "PawPrint", "color": "#7C3AED", "image_key": "mission_karuna_animals"},
+    {"slug": "mission-paridhan", "name": "Mission Paridhan", "name_hi": "\u092e\u093f\u0936\u0928 \u092a\u0930\u093f\u0927\u093e\u0928", "tagline": "Clothing the Needy, Wrapping with Dignity", "tagline_hi": "\u0935\u0938\u094d\u0924\u094d\u0930\u0926\u093e\u0928, \u0938\u092e\u094d\u092e\u093e\u0928 \u0915\u093e \u0906\u0935\u0930\u0923", "description": "Mission Paridhan collects donated clothes and distributes them among beggars and the needy.", "description_hi": "\u092e\u093f\u0936\u0928 \u092a\u0930\u093f\u0927\u093e\u0928 \u0926\u093e\u0928 \u092e\u0947\u0902 \u092a\u094d\u0930\u093e\u092a\u094d\u0924 \u0935\u0938\u094d\u0924\u094d\u0930\u094b\u0902 \u0915\u094b \u090f\u0915\u0924\u094d\u0930 \u0915\u0930\u0924\u093e \u0939\u0948\u0964", "icon": "Shirt", "color": "#0891B2", "image_key": "mission_paridhan_clothes"},
 ]
 
 @api_router.get("/missions")
@@ -245,113 +305,46 @@ async def get_mission(slug: str):
             return m
     raise HTTPException(status_code=404, detail="Mission not found")
 
-# ── Admin dependency ──
-async def require_admin(request: Request) -> dict:
-    user = await get_current_user(request)
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-class StatusUpdate(BaseModel):
-    status: str
-
-# ── Admin Routes ──
-@api_router.get("/admin/stats")
-async def admin_stats(user: dict = Depends(require_admin)):
-    total_donations = await db.donations.count_documents({})
-    pipeline = [{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]
-    agg = await db.donations.aggregate(pipeline).to_list(1)
-    total_amount = agg[0]["total"] if agg else 0
-    confirmed_donations = await db.donations.count_documents({"status": "confirmed"})
-    total_volunteers = await db.volunteers.count_documents({})
-    approved_volunteers = await db.volunteers.count_documents({"status": "approved"})
-    total_queries = await db.queries.count_documents({})
-    open_queries = await db.queries.count_documents({"status": "open"})
-    return {
-        "donations": {"total": total_donations, "confirmed": confirmed_donations, "total_amount": total_amount},
-        "volunteers": {"total": total_volunteers, "approved": approved_volunteers},
-        "queries": {"total": total_queries, "open": open_queries},
-    }
-
-@api_router.get("/admin/donations")
-async def admin_list_donations(user: dict = Depends(require_admin)):
-    items = await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return items
-
-@api_router.put("/admin/donations/{item_id}/status")
-async def admin_update_donation_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
-    result = await db.donations.update_one({"id": item_id}, {"$set": {"status": data.status}})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Donation not found")
-    return {"message": "Donation status updated", "status": data.status}
-
-@api_router.get("/admin/volunteers")
-async def admin_list_volunteers(user: dict = Depends(require_admin)):
-    items = await db.volunteers.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return items
-
-@api_router.put("/admin/volunteers/{item_id}/status")
-async def admin_update_volunteer_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
-    result = await db.volunteers.update_one({"id": item_id}, {"$set": {"status": data.status}})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Volunteer not found")
-    return {"message": "Volunteer status updated", "status": data.status}
-
-@api_router.get("/admin/queries")
-async def admin_list_queries(user: dict = Depends(require_admin)):
-    items = await db.queries.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return items
-
-@api_router.put("/admin/queries/{item_id}/status")
-async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
-    result = await db.queries.update_one({"id": item_id}, {"$set": {"status": data.status}})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Query not found")
-    return {"message": "Query status updated", "status": data.status}
-
 # ── Razorpay Donation Flow ──
 @api_router.post("/donations/create-order")
-async def create_razorpay_order(data: DonationInput):
-    rz_key = os.environ.get("RAZORPAY_KEY_ID")
-    rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
+async def create_razorpay_order(data: DonationInput, request: Request):
+    user = await get_current_user_optional(request)
+    if not user and not data.otp_token:
+        raise HTTPException(status_code=400, detail="Email verification required. Please verify your email with OTP first.")
+    if not user and data.otp_token:
+        otp_rec = await db.otp_tokens.find_one({"email": data.email.lower().strip(), "token": data.otp_token, "purpose": "donation", "verified": True})
+        if not otp_rec:
+            raise HTTPException(status_code=400, detail="Invalid or expired email verification. Please verify again.")
     donation_id = str(uuid.uuid4())
     doc = {
-        "id": donation_id,
-        "name": data.name,
-        "email": data.email.lower().strip(),
-        "phone": data.phone,
-        "amount": data.amount,
-        "pan_number": data.pan_number,
-        "message": data.message,
-        "status": "pending",
+        "id": donation_id, "name": data.name, "email": data.email.lower().strip(),
+        "phone": data.phone, "amount": data.amount, "pan_number": data.pan_number,
+        "aadhaar_number": data.aadhaar_number or (user.get("aadhaar_number", "") if user else ""),
+        "address": data.address or (user.get("address", "") if user else ""),
+        "message": data.message, "status": "pending",
+        "user_id": user.get("_id", "") if user else "",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
+    rz_key = os.environ.get("RAZORPAY_KEY_ID")
+    rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
     if rz_key and rz_secret:
         import razorpay
         rz_client = razorpay.Client(auth=(rz_key, rz_secret))
-        order_data = {
-            "amount": data.amount * 100,
-            "currency": "INR",
-            "receipt": donation_id,
-            "notes": {"donor_name": data.name, "donor_email": data.email}
-        }
-        order = rz_client.order.create(data=order_data)
+        order = rz_client.order.create(data={"amount": data.amount * 100, "currency": "INR", "receipt": donation_id})
         doc["razorpay_order_id"] = order["id"]
         await db.donations.insert_one(doc)
         doc.pop("_id", None)
+        await log_activity("donation_order_created", "donation", donation_id, data.email, f"Amount: {data.amount} INR, Razorpay order", request.client.host if request.client else "")
         return {"donation": doc, "razorpay_order_id": order["id"], "razorpay_key": rz_key, "amount": data.amount * 100, "currency": "INR"}
     else:
         await db.donations.insert_one(doc)
         doc.pop("_id", None)
-        return {"donation": doc, "razorpay_order_id": None, "message": "Razorpay keys not configured. Donation recorded for manual follow-up."}
+        await log_activity("donation_recorded", "donation", donation_id, data.email, f"Amount: {data.amount} INR, manual", request.client.host if request.client else "")
+        return {"donation": doc, "razorpay_order_id": None, "message": "Donation recorded. Our team will contact you for payment."}
 
 @api_router.post("/donations/verify-payment")
 async def verify_razorpay_payment(request: Request):
     body = await request.json()
-    razorpay_order_id = body.get("razorpay_order_id")
-    razorpay_payment_id = body.get("razorpay_payment_id")
-    razorpay_signature = body.get("razorpay_signature")
-    donation_id = body.get("donation_id")
     rz_key = os.environ.get("RAZORPAY_KEY_ID")
     rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
     if not rz_key or not rz_secret:
@@ -360,86 +353,273 @@ async def verify_razorpay_payment(request: Request):
     rz_client = razorpay.Client(auth=(rz_key, rz_secret))
     try:
         rz_client.utility.verify_payment_signature({
-            "razorpay_order_id": razorpay_order_id,
-            "razorpay_payment_id": razorpay_payment_id,
-            "razorpay_signature": razorpay_signature,
+            "razorpay_order_id": body["razorpay_order_id"],
+            "razorpay_payment_id": body["razorpay_payment_id"],
+            "razorpay_signature": body["razorpay_signature"],
         })
-        await db.donations.update_one(
-            {"id": donation_id},
-            {"$set": {"status": "confirmed", "razorpay_payment_id": razorpay_payment_id, "razorpay_signature": razorpay_signature}}
-        )
+        await db.donations.update_one({"id": body["donation_id"]}, {"$set": {"status": "confirmed", "razorpay_payment_id": body["razorpay_payment_id"]}})
+        await log_activity("payment_verified", "donation", body["donation_id"], "", "Razorpay payment confirmed", request.client.host if request.client else "")
         return {"message": "Payment verified successfully", "status": "confirmed"}
-    except razorpay.errors.SignatureVerificationError:
-        await db.donations.update_one({"id": donation_id}, {"$set": {"status": "failed"}})
+    except Exception:
+        await db.donations.update_one({"id": body["donation_id"]}, {"$set": {"status": "failed"}})
         raise HTTPException(status_code=400, detail="Payment verification failed")
 
-# ── Donations Routes ──
 @api_router.post("/donations")
-async def create_donation(data: DonationInput):
+async def create_donation(data: DonationInput, request: Request):
     doc = {
-        "id": str(uuid.uuid4()),
-        "name": data.name,
-        "email": data.email.lower().strip(),
-        "phone": data.phone,
-        "amount": data.amount,
-        "pan_number": data.pan_number,
-        "message": data.message,
-        "status": "pending",
+        "id": str(uuid.uuid4()), "name": data.name, "email": data.email.lower().strip(),
+        "phone": data.phone, "amount": data.amount, "pan_number": data.pan_number,
+        "aadhaar_number": data.aadhaar_number or "", "address": data.address or "",
+        "message": data.message, "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.donations.insert_one(doc)
     doc.pop("_id", None)
+    await log_activity("donation_recorded", "donation", doc["id"], data.email, f"Amount: {data.amount}", request.client.host if request.client else "")
     return {"message": "Donation recorded successfully.", "donation": doc}
 
 @api_router.get("/donations")
 async def list_donations(user: dict = Depends(get_current_user)):
-    donations = await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    return donations
+    return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+# ── 80G Certificate PDF ──
+def generate_80g_pdf(donation: dict) -> bytes:
+    buf = io.BytesIO()
+    c = pdf_canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    navy = HexColor("#1E56A0")
+    sky = HexColor("#28A9E2")
+    orange = HexColor("#FF7F00")
+    dark = HexColor("#0D2847")
+    gray = HexColor("#666666")
+
+    # Border
+    c.setStrokeColor(navy)
+    c.setLineWidth(3)
+    c.rect(20*mm, 20*mm, w - 40*mm, h - 40*mm)
+    c.setStrokeColor(sky)
+    c.setLineWidth(1)
+    c.rect(22*mm, 22*mm, w - 44*mm, h - 44*mm)
+
+    y = h - 45*mm
+    c.setFont("Helvetica-Bold", 18)
+    c.setFillColor(navy)
+    c.drawCentredString(w/2, y, "HEROIC HIFI FOUNDATION")
+    y -= 7*mm
+    c.setFont("Helvetica", 9)
+    c.setFillColor(gray)
+    c.drawCentredString(w/2, y, "Section 8 Company under The Companies Act, 2013")
+    y -= 5*mm
+    c.drawCentredString(w/2, y, "CIN: U88900BR2024NPL072593")
+    y -= 5*mm
+    c.setFont("Helvetica", 7.5)
+    c.drawCentredString(w/2, y, "C/o Nirbhay Kr. Agnihotry, Village: Korha, Tola: Korha, Mirjanhat, Bhagalpur, Jagdishpur, Bihar 812005")
+
+    y -= 12*mm
+    c.setStrokeColor(orange)
+    c.setLineWidth(2)
+    c.line(35*mm, y, w - 35*mm, y)
+
+    y -= 10*mm
+    c.setFont("Helvetica-Bold", 16)
+    c.setFillColor(dark)
+    c.drawCentredString(w/2, y, "PROVISIONAL DONATION RECEIPT")
+    y -= 7*mm
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(orange)
+    c.drawCentredString(w/2, y, "Under Section 80G of the Income Tax Act, 1961")
+    y -= 5*mm
+    c.setFont("Helvetica", 8.5)
+    c.setFillColor(gray)
+    c.drawCentredString(w/2, y, "(Provisional Certificate \u2014 Eligible for 50% Tax Rebate)")
+
+    cert_no = f"HHF/{datetime.now().strftime('%Y%m')}/{donation['id'][:8].upper()}"
+    y -= 12*mm
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(dark)
+    c.drawString(35*mm, y, f"Certificate No: {cert_no}")
+    c.drawRightString(w - 35*mm, y, f"Date: {datetime.now().strftime('%d %B %Y')}")
+
+    y -= 15*mm
+    fields = [
+        ("Donor Name", donation.get("name", "")),
+        ("PAN Number", donation.get("pan_number", "")),
+        ("Aadhaar Number", donation.get("aadhaar_number", "") or "N/A"),
+        ("Address", donation.get("address", "") or "N/A"),
+        ("Phone", donation.get("phone", "")),
+        ("Email", donation.get("email", "")),
+        ("Donation Amount", f"\u20B9 {donation.get('amount', 0):,}"),
+        ("Donation Date", donation.get("created_at", "")[:10]),
+        ("Payment Status", donation.get("status", "pending").capitalize()),
+    ]
+    for label, value in fields:
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(navy)
+        c.drawString(35*mm, y, f"{label}:")
+        c.setFont("Helvetica", 9)
+        c.setFillColor(dark)
+        val_str = str(value)
+        if len(val_str) > 70:
+            val_str = val_str[:70] + "..."
+        c.drawString(80*mm, y, val_str)
+        y -= 7*mm
+
+    y -= 8*mm
+    c.setStrokeColor(sky)
+    c.setLineWidth(0.5)
+    c.line(35*mm, y, w - 35*mm, y)
+    y -= 8*mm
+
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(dark)
+    c.drawCentredString(w/2, y, "IMPORTANT NOTICE")
+    y -= 6*mm
+    style = ParagraphStyle("notice", fontName="Helvetica", fontSize=8, leading=11, textColor=gray, alignment=TA_LEFT)
+    notice_text = (
+        "This is a <b>Provisional Donation Receipt</b> issued by Heroic HIFI Foundation. "
+        "As per the applicable provisions, this provisional certificate entitles the donor to claim a <b>50% tax rebate/deduction</b> "
+        "on the donated amount under Section 80G of the Income Tax Act, 1961. "
+        "This certificate is subject to the final approval and issuance of the regular 80G certificate by the Income Tax Department. "
+        "The donor is advised to retain this receipt for their tax records."
+    )
+    p = Paragraph(notice_text, style)
+    pw, ph = p.wrap(w - 70*mm, 100*mm)
+    p.drawOn(c, 35*mm, y - ph)
+    y -= ph + 15*mm
+
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(navy)
+    c.drawString(35*mm, y, "For Heroic HIFI Foundation")
+    y -= 12*mm
+    c.setFont("Helvetica", 8)
+    c.setFillColor(dark)
+    c.drawString(35*mm, y, "Authorised Signatory")
+    c.drawRightString(w - 35*mm, y, f"Email: hhf.hifi@proton.me | Phone: (+91) 7970976881")
+
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+@api_router.get("/donations/{donation_id}/certificate")
+async def download_80g_certificate(donation_id: str):
+    donation = await db.donations.find_one({"id": donation_id}, {"_id": 0})
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    if not donation.get("pan_number"):
+        raise HTTPException(status_code=400, detail="PAN number is required for 80G certificate")
+    pdf_bytes = generate_80g_pdf(donation)
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=HHF_80G_{donation_id[:8]}.pdf"}
+    )
 
 # ── Volunteers Routes ──
 @api_router.post("/volunteers")
-async def register_volunteer(data: VolunteerInput):
+async def register_volunteer(data: VolunteerInput, request: Request):
     doc = {
-        "id": str(uuid.uuid4()),
-        "name": data.name,
-        "email": data.email.lower().strip(),
-        "phone": data.phone,
-        "city": data.city,
-        "interests": data.interests,
-        "message": data.message,
-        "status": "pending",
+        "id": str(uuid.uuid4()), "name": data.name, "email": data.email.lower().strip(),
+        "phone": data.phone, "city": data.city, "interests": data.interests,
+        "message": data.message, "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.volunteers.insert_one(doc)
     doc.pop("_id", None)
+    await log_activity("volunteer_registered", "volunteer", doc["id"], data.email, f"City: {data.city}", request.client.host if request.client else "")
     return {"message": "Thank you for registering as a volunteer! We will get back to you shortly.", "volunteer": doc}
 
 # ── Queries Routes ──
 @api_router.post("/queries")
-async def submit_query(data: QueryInput):
+async def submit_query(data: QueryInput, request: Request):
     doc = {
-        "id": str(uuid.uuid4()),
-        "name": data.name,
-        "email": data.email.lower().strip(),
-        "mission": data.mission,
-        "subject": data.subject,
-        "message": data.message,
-        "status": "open",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "id": str(uuid.uuid4()), "name": data.name, "email": data.email.lower().strip(),
+        "mission": data.mission, "subject": data.subject, "message": data.message,
+        "status": "open", "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.queries.insert_one(doc)
     doc.pop("_id", None)
-    return {"message": "Your query has been submitted successfully. We will respond shortly.", "query": doc}
+    await log_activity("query_submitted", "query", doc["id"], data.email, f"Mission: {data.mission}", request.client.host if request.client else "")
+    return {"message": "Your query has been submitted successfully.", "query": doc}
+
+# ── Admin Routes ──
+@api_router.get("/admin/stats")
+async def admin_stats(user: dict = Depends(require_admin)):
+    total_donations = await db.donations.count_documents({})
+    agg = await db.donations.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
+    total_amount = agg[0]["total"] if agg else 0
+    confirmed = await db.donations.count_documents({"status": "confirmed"})
+    total_vol = await db.volunteers.count_documents({})
+    approved_vol = await db.volunteers.count_documents({"status": "approved"})
+    total_q = await db.queries.count_documents({})
+    open_q = await db.queries.count_documents({"status": "open"})
+    total_users = await db.users.count_documents({})
+    return {
+        "donations": {"total": total_donations, "confirmed": confirmed, "total_amount": total_amount},
+        "volunteers": {"total": total_vol, "approved": approved_vol},
+        "queries": {"total": total_q, "open": open_q},
+        "users": {"total": total_users},
+    }
+
+@api_router.get("/admin/donations")
+async def admin_list_donations(user: dict = Depends(require_admin)):
+    return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.put("/admin/donations/{item_id}/status")
+async def admin_update_donation_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin), request: Request = None):
+    result = await db.donations.update_one({"id": item_id}, {"$set": {"status": data.status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    await log_activity("donation_status_updated", "donation", item_id, user["email"], f"Status -> {data.status}", "")
+    return {"message": "Status updated", "status": data.status}
+
+@api_router.get("/admin/volunteers")
+async def admin_list_volunteers(user: dict = Depends(require_admin)):
+    return await db.volunteers.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.put("/admin/volunteers/{item_id}/status")
+async def admin_update_volunteer_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
+    result = await db.volunteers.update_one({"id": item_id}, {"$set": {"status": data.status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Volunteer not found")
+    await log_activity("volunteer_status_updated", "volunteer", item_id, user["email"], f"Status -> {data.status}", "")
+    return {"message": "Status updated", "status": data.status}
+
+@api_router.get("/admin/queries")
+async def admin_list_queries(user: dict = Depends(require_admin)):
+    return await db.queries.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.put("/admin/queries/{item_id}/status")
+async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
+    result = await db.queries.update_one({"id": item_id}, {"$set": {"status": data.status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Query not found")
+    await log_activity("query_status_updated", "query", item_id, user["email"], f"Status -> {data.status}", "")
+    return {"message": "Status updated", "status": data.status}
+
+@api_router.get("/admin/users")
+async def admin_list_users(user: dict = Depends(require_admin)):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    # Add string id from email for identification
+    return users
+
+@api_router.delete("/admin/users/{user_email}")
+async def admin_delete_user(user_email: str, user: dict = Depends(require_admin)):
+    email = user_email.lower().strip()
+    if email == user["email"]:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    result = await db.users.delete_one({"email": email})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    await log_activity("user_deleted", "user", email, user["email"], f"Deleted user: {email}", "")
+    return {"message": f"User {email} deleted successfully"}
 
 # ── Health ──
 @api_router.get("/health")
 async def health():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
-# Include router
 app.include_router(api_router)
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -448,33 +628,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
-    # Seed admin
+    await db.otp_tokens.create_index("expires_at", expireAfterSeconds=0)
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@heroichifi.org")
     admin_password = os.environ.get("ADMIN_PASSWORD", "HHF@admin2024")
     existing = await db.users.find_one({"email": admin_email})
     if not existing:
-        hashed = hash_password(admin_password)
         await db.users.insert_one({
-            "email": admin_email,
-            "password_hash": hashed,
-            "name": "Admin",
-            "role": "admin",
+            "email": admin_email, "password_hash": hash_password(admin_password),
+            "name": "Admin", "role": "admin", "email_verified": True,
+            "phone": "(+91) 7970976881", "pan_number": "", "aadhaar_number": "",
+            "address": "", "age": None, "dob": "",
             "created_at": datetime.now(timezone.utc).isoformat()
         })
-        logger.info(f"Admin user seeded: {admin_email}")
+        logger.info(f"Admin seeded: {admin_email}")
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
-        logger.info("Admin password updated")
-    # Write test credentials
     creds_path = Path("/app/memory/test_credentials.md")
     creds_path.parent.mkdir(parents=True, exist_ok=True)
-    creds_path.write_text(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n## Auth Endpoints\n- POST /api/auth/login\n- POST /api/auth/register\n- GET /api/auth/me\n- POST /api/auth/logout\n")
+    creds_path.write_text(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

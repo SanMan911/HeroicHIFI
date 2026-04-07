@@ -31,6 +31,8 @@ class HeroicHIFIAPITester:
                 response = requests.post(url, json=data, headers=test_headers, timeout=10)
             elif method == 'PUT':
                 response = requests.put(url, json=data, headers=test_headers, timeout=10)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=test_headers, timeout=10)
 
             success = response.status_code == expected_status
             if success:
@@ -54,7 +56,7 @@ class HeroicHIFIAPITester:
                 print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
                 print(f"   Response: {response.text[:200]}")
 
-            return success, response.json() if success and response.text else {}
+            return success, response.json() if success and response.text and response.headers.get('content-type', '').startswith('application/json') else {}
 
         except Exception as e:
             self.failed_tests.append({
@@ -95,14 +97,68 @@ class HeroicHIFIAPITester:
             return True, response
         return False, {}
 
-    def test_register(self, name, email, password):
-        """Test user registration"""
+    def test_send_otp(self, email, purpose="registration"):
+        """Test OTP sending"""
         return self.run_test(
-            "User Registration",
+            f"Send OTP for {purpose}",
+            "POST",
+            "auth/send-otp",
+            200,
+            data={"email": email, "purpose": purpose}
+        )
+
+    def test_verify_otp(self, email, otp, purpose="registration"):
+        """Test OTP verification"""
+        return self.run_test(
+            f"Verify OTP for {purpose}",
+            "POST",
+            "auth/verify-otp",
+            200,
+            data={"email": email, "otp": otp, "purpose": purpose}
+        )
+
+    def test_register_with_otp(self, name, email, password, phone, pan_number, aadhaar_number, otp_token, age=None, dob=None, address=None):
+        """Test user registration with OTP token"""
+        data = {
+            "name": name,
+            "email": email,
+            "password": password,
+            "phone": phone,
+            "pan_number": pan_number,
+            "aadhaar_number": aadhaar_number,
+            "otp_token": otp_token
+        }
+        if age:
+            data["age"] = age
+        if dob:
+            data["dob"] = dob
+        if address:
+            data["address"] = address
+            
+        return self.run_test(
+            "User Registration with OTP",
             "POST",
             "auth/register",
             200,
-            data={"name": name, "email": email, "password": password}
+            data=data
+        )
+
+    def test_register_without_otp(self, name, email, password, phone, pan_number, aadhaar_number):
+        """Test user registration without OTP token (should fail)"""
+        return self.run_test(
+            "User Registration without OTP (should fail)",
+            "POST",
+            "auth/register",
+            400,
+            data={
+                "name": name,
+                "email": email,
+                "password": password,
+                "phone": phone,
+                "pan_number": pan_number,
+                "aadhaar_number": aadhaar_number,
+                "otp_token": "invalid_token"
+            }
         )
 
     def test_get_me(self):
@@ -121,9 +177,72 @@ class HeroicHIFIAPITester:
             "phone": "9876543210",
             "amount": 1000,
             "pan_number": "ABCDE1234F",
+            "aadhaar_number": "123456789012",
+            "address": "Test Address",
             "message": "Test donation for API testing"
         }
         return self.run_test("Create Donation", "POST", "donations", 200, data=donation_data)
+
+    def test_create_donation_without_pan(self):
+        """Test donation creation without PAN (should fail)"""
+        donation_data = {
+            "name": "Test Donor No PAN",
+            "email": "testdonornopan@example.com",
+            "phone": "9876543210",
+            "amount": 1000,
+            "message": "Test donation without PAN"
+        }
+        return self.run_test("Create Donation without PAN", "POST", "donations", 422, data=donation_data)
+
+    def test_create_order_with_otp(self, otp_token):
+        """Test donation order creation with OTP token for non-logged users"""
+        donation_data = {
+            "name": "Test OTP Donor",
+            "email": "testotpdonor@example.com",
+            "phone": "9876543210",
+            "amount": 2000,
+            "pan_number": "ABCDE1234F",
+            "aadhaar_number": "123456789012",
+            "address": "Test Address",
+            "message": "Test donation with OTP",
+            "otp_token": otp_token
+        }
+        return self.run_test("Create Order with OTP", "POST", "donations/create-order", 200, data=donation_data)
+
+    def test_create_order_without_auth_or_otp(self):
+        """Test donation order creation without auth or OTP (should fail)"""
+        donation_data = {
+            "name": "Test No Auth Donor",
+            "email": "testnoauth@example.com",
+            "phone": "9876543210",
+            "amount": 1500,
+            "pan_number": "ABCDE1234F",
+            "message": "Test donation without auth or OTP"
+        }
+        # Temporarily remove token
+        temp_token = self.token
+        self.token = None
+        result = self.run_test("Create Order without Auth/OTP", "POST", "donations/create-order", 400, data=donation_data)
+        self.token = temp_token
+        return result
+
+    def test_80g_certificate(self, donation_id):
+        """Test 80G certificate generation"""
+        return self.run_test(
+            "Download 80G Certificate",
+            "GET",
+            f"donations/{donation_id}/certificate",
+            200
+        )
+
+    def test_80g_certificate_without_pan(self, donation_id):
+        """Test 80G certificate generation without PAN (should fail)"""
+        return self.run_test(
+            "Download 80G Certificate without PAN",
+            "GET",
+            f"donations/{donation_id}/certificate",
+            400
+        )
 
     def test_create_volunteer(self):
         """Test volunteer registration"""
@@ -183,6 +302,28 @@ class HeroicHIFIAPITester:
         """Test admin queries list endpoint"""
         return self.run_test("Get Admin Queries", "GET", "admin/queries", 200)
 
+    def test_admin_users(self):
+        """Test admin users list endpoint"""
+        return self.run_test("Get Admin Users", "GET", "admin/users", 200)
+
+    def test_admin_delete_user(self, user_email):
+        """Test admin delete user endpoint"""
+        return self.run_test(
+            f"Delete User {user_email}",
+            "DELETE",
+            f"admin/users/{user_email}",
+            200
+        )
+
+    def test_admin_delete_self(self, admin_email):
+        """Test admin cannot delete self (should fail)"""
+        return self.run_test(
+            "Admin Delete Self (should fail)",
+            "DELETE",
+            f"admin/users/{admin_email}",
+            400
+        )
+
     def test_admin_update_donation_status(self, donation_id, status):
         """Test updating donation status"""
         return self.run_test(
@@ -224,8 +365,16 @@ class HeroicHIFIAPITester:
             "Register Non-Admin User",
             "POST",
             "auth/register",
-            200,
-            data={"name": "Non Admin User", "email": test_email, "password": "TestPass123!"}
+            400,  # Should fail because no OTP token
+            data={
+                "name": "Non Admin User", 
+                "email": test_email, 
+                "password": "TestPass123!",
+                "phone": "9876543210",
+                "pan_number": "ABCDE1234F",
+                "aadhaar_number": "123456789012",
+                "otp_token": "invalid_token"
+            }
         )
         
         if reg_success and 'token' in reg_response:
@@ -269,6 +418,50 @@ def main():
         for slug in mission_slugs:
             tester.test_mission_detail(slug)
     
+    # Test OTP verification flow
+    print("\n📧 TESTING OTP VERIFICATION")
+    print("-" * 40)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    test_email = f"testuser_{timestamp}@example.com"
+    
+    # Test OTP sending
+    otp_send_success, otp_response = tester.test_send_otp(test_email, "registration")
+    otp_debug = None
+    otp_token = None
+    
+    if otp_send_success:
+        otp_debug = otp_response.get('otp_debug')
+        if otp_debug:
+            print(f"   Debug OTP received: {otp_debug}")
+            # Test OTP verification
+            verify_success, verify_response = tester.test_verify_otp(test_email, otp_debug, "registration")
+            if verify_success:
+                otp_token = verify_response.get('otp_token')
+                print(f"   OTP Token received: {otp_token[:20]}...")
+    
+    # Test registration with OTP
+    print("\n🔐 TESTING REGISTRATION WITH OTP")
+    print("-" * 40)
+    
+    if otp_token:
+        # Test successful registration with OTP
+        reg_success, reg_response = tester.test_register_with_otp(
+            "Test User", test_email, "TestPass123!", "9876543210", 
+            "ABCDE1234F", "123456789012", otp_token, 
+            age=25, dob="1999-01-01", address="Test Address"
+        )
+        
+        if reg_success and 'token' in reg_response:
+            print(f"   Registration successful, token: {reg_response['token'][:20]}...")
+    
+    # Test registration without OTP (should fail)
+    test_email_2 = f"testuser2_{timestamp}@example.com"
+    tester.test_register_without_otp(
+        "Test User 2", test_email_2, "TestPass123!", "9876543210", 
+        "ABCDE1234F", "123456789012"
+    )
+    
     # Test authentication
     print("\n🔐 TESTING AUTHENTICATION")
     print("-" * 40)
@@ -281,17 +474,53 @@ def main():
     if login_success:
         # Test authenticated endpoints
         tester.test_get_me()
+        
+        # Check if login response includes new fields
+        user_data = login_response.get('user', {})
+        expected_fields = ['phone', 'pan_number', 'aadhaar_number', 'address', 'age', 'dob']
+        print("   Checking login response fields:")
+        for field in expected_fields:
+            if field in user_data:
+                print(f"   ✅ {field}: {user_data[field]}")
+            else:
+                print(f"   ❌ Missing field: {field}")
+        
         tester.test_logout()
     
-    # Test registration with unique email
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    test_email = f"testuser_{timestamp}@example.com"
-    tester.test_register("Test User", test_email, "TestPass123!")
+    # Test donation flow with OTP
+    print("\n💰 TESTING DONATION WITH OTP")
+    print("-" * 40)
+    
+    # Test OTP for donation
+    donation_email = f"donor_{timestamp}@example.com"
+    otp_send_success, otp_response = tester.test_send_otp(donation_email, "donation")
+    donation_otp_token = None
+    
+    if otp_send_success:
+        otp_debug = otp_response.get('otp_debug')
+        if otp_debug:
+            verify_success, verify_response = tester.test_verify_otp(donation_email, otp_debug, "donation")
+            if verify_success:
+                donation_otp_token = verify_response.get('otp_token')
+    
+    # Test donation order creation with OTP
+    if donation_otp_token:
+        order_success, order_response = tester.test_create_order_with_otp(donation_otp_token)
+        if order_success:
+            donation_id = order_response.get('donation', {}).get('id')
+            if donation_id:
+                print(f"   Donation created with ID: {donation_id}")
+                # Test 80G certificate generation
+                tester.test_80g_certificate(donation_id)
+    
+    # Test donation without auth or OTP (should fail)
+    tester.test_create_order_without_auth_or_otp()
     
     # Test form submissions
     print("\n📝 TESTING FORM SUBMISSIONS")
     print("-" * 40)
     donation_success, donation_response = tester.test_create_donation()
+    tester.test_create_donation_without_pan()
     volunteer_success, volunteer_response = tester.test_create_volunteer()
     query_success, query_response = tester.test_create_query()
     
@@ -313,6 +542,7 @@ def main():
         admin_donations_success, admin_donations = tester.test_admin_donations()
         admin_volunteers_success, admin_volunteers = tester.test_admin_volunteers()
         admin_queries_success, admin_queries = tester.test_admin_queries()
+        admin_users_success, admin_users = tester.test_admin_users()
         
         # Test status updates if we have data
         if admin_donations_success and admin_donations and len(admin_donations) > 0:
@@ -329,6 +559,26 @@ def main():
             query_id = admin_queries[0].get('id')
             if query_id:
                 tester.test_admin_update_query_status(query_id, "responded")
+        
+        # Test user management
+        print("\n👥 TESTING USER MANAGEMENT")
+        print("-" * 40)
+        
+        if admin_users_success and admin_users:
+            print(f"   Found {len(admin_users)} users")
+            # Find a non-admin user to test deletion
+            non_admin_user = None
+            for user in admin_users:
+                if user.get('role') != 'admin' and user.get('email') != admin_email:
+                    non_admin_user = user
+                    break
+            
+            if non_admin_user:
+                # Test deleting non-admin user
+                tester.test_admin_delete_user(non_admin_user['email'])
+            
+            # Test admin cannot delete self
+            tester.test_admin_delete_self(admin_email)
         
         # Test non-admin access restrictions
         print("\n🚫 TESTING NON-ADMIN ACCESS RESTRICTIONS")

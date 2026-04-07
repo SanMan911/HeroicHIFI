@@ -26,12 +26,9 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const register = async (name, email, password) => {
-    const { data } = await api.post("/auth/register", { name, email, password });
-    localStorage.setItem("hhf_token", data.token);
-    localStorage.setItem("hhf_user", JSON.stringify(data.user));
-    setUser(data.user);
-    return data;
+  const register = async () => {
+    // Registration is handled directly in Login page with OTP flow
+    throw new Error("Use OTP registration flow in Login page");
   };
 
   const logout = () => {

@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { motion } from "framer-motion";
-import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye } from "lucide-react";
+import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_COLORS = {
@@ -77,11 +77,13 @@ function DonationsTab({ donations, onStatusChange }) {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                 <div><span className="text-slate-400">Phone:</span> <span className="text-slate-600">{d.phone}</span></div>
                 <div><span className="text-slate-400">PAN:</span> <span className="text-slate-600">{d.pan_number || "—"}</span></div>
+                <div><span className="text-slate-400">Aadhaar:</span> <span className="text-slate-600">{d.aadhaar_number || "—"}</span></div>
                 <div><span className="text-slate-400">Date:</span> <span className="text-slate-600">{new Date(d.created_at).toLocaleDateString("en-IN")}</span></div>
+                {d.address && <div className="col-span-2"><span className="text-slate-400">Address:</span> <span className="text-slate-600">{d.address}</span></div>}
                 {d.razorpay_payment_id && <div className="col-span-2"><span className="text-slate-400">Payment ID:</span> <span className="text-slate-600 font-mono text-[10px]">{d.razorpay_payment_id}</span></div>}
               </div>
               {d.message && <p className="text-xs text-slate-500 italic">"{d.message}"</p>}
-              <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
                 <span className="text-xs text-slate-400">Update status:</span>
                 <Select value={d.status} onValueChange={(val) => onStatusChange("donations", d.id, val)}>
                   <SelectTrigger className="h-7 text-xs w-32 rounded-lg" data-testid={`donation-status-${d.id}`}><SelectValue /></SelectTrigger>
@@ -91,6 +93,14 @@ function DonationsTab({ donations, onStatusChange }) {
                     <SelectItem value="rejected">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
+                {d.pan_number && (
+                  <a href={`${process.env.REACT_APP_BACKEND_URL}/api/donations/${d.id}/certificate`} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-[#FF7F00]/10 text-[#FF7F00] hover:bg-[#FF7F00]/20 transition-colors"
+                    data-testid={`download-cert-${d.id}`}
+                  >
+                    <Download className="w-3 h-3" /> 80G Certificate
+                  </a>
+                )}
               </div>
             </div>
           )}
@@ -215,6 +225,7 @@ export default function Dashboard() {
   const [donations, setDonations] = useState([]);
   const [volunteers, setVolunteers] = useState([]);
   const [queries, setQueries] = useState([]);
+  const [users, setUsers] = useState([]);
   const [fetching, setFetching] = useState(true);
 
   const isAdmin = user?.role === "admin";
@@ -223,16 +234,18 @@ export default function Dashboard() {
     if (!isAdmin) { setFetching(false); return; }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/donations"),
         api.get("/admin/volunteers"),
         api.get("/admin/queries"),
+        api.get("/admin/users"),
       ]);
       setStats(statsRes.data);
       setDonations(donRes.data);
       setVolunteers(volRes.data);
       setQueries(qRes.data);
+      setUsers(usersRes.data);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -246,6 +259,17 @@ export default function Dashboard() {
     try {
       await api.put(`/admin/${collection}/${itemId}/status`, { status: newStatus });
       toast.success(`Status updated to "${newStatus}"`);
+      fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const handleDeleteUser = async (email) => {
+    if (!window.confirm(`Delete user "${email}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/admin/users/${encodeURIComponent(email)}`);
+      toast.success(`User ${email} deleted`);
       fetchData();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -286,6 +310,7 @@ export default function Dashboard() {
     { id: "donations", label: "Donations", icon: IndianRupee, count: donations.length },
     { id: "volunteers", label: "Volunteers", icon: Users, count: volunteers.length },
     { id: "queries", label: "Queries", icon: MessageSquare, count: queries.length },
+    { id: "users", label: "Users", icon: UserCog, count: users.length },
   ];
 
   return (
@@ -331,11 +356,12 @@ export default function Dashboard() {
 
           {/* Overview */}
           {activeTab === "overview" && stats && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="admin-stats">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" data-testid="admin-stats">
               <StatCard icon={IndianRupee} label="Total Donations" value={stats.donations.total} sub={`${"\u20B9"}${stats.donations.total_amount.toLocaleString("en-IN")} raised`} color="#FF7F00" />
               <StatCard icon={CheckCircle} label="Confirmed Donations" value={stats.donations.confirmed} sub={`of ${stats.donations.total} total`} color="#16A34A" />
               <StatCard icon={Users} label="Volunteers" value={stats.volunteers.total} sub={`${stats.volunteers.approved} approved`} color="#1E56A0" />
               <StatCard icon={MessageSquare} label="Queries" value={stats.queries.total} sub={`${stats.queries.open} open`} color="#28A9E2" />
+              <StatCard icon={UserCog} label="Registered Users" value={stats.users?.total || 0} color="#7C3AED" />
             </div>
           )}
 
@@ -351,6 +377,36 @@ export default function Dashboard() {
 
           {/* Queries Tab */}
           {activeTab === "queries" && <QueriesTab queries={queries} onStatusChange={handleStatusChange} />}
+
+          {/* Users Tab */}
+          {activeTab === "users" && (
+            <div className="space-y-3" data-testid="admin-users-list">
+              {users.length === 0 ? <p className="text-center text-slate-400 py-12">No users yet.</p> :
+                users.map((u) => (
+                  <div key={u.email} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-[#1E56A0]/10 flex items-center justify-center shrink-0">
+                        <UserCog className="w-4 h-4 text-[#1E56A0]" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[#0D2847] truncate">{u.name} <span className="text-xs text-slate-400 ml-1">({u.role})</span></p>
+                        <p className="text-xs text-slate-400">{u.email} {u.phone ? `| ${u.phone}` : ""}</p>
+                        {u.pan_number && <p className="text-xs text-slate-400">PAN: {u.pan_number} {u.aadhaar_number ? `| Aadhaar: ${u.aadhaar_number}` : ""}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${u.role === "admin" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-slate-50 text-slate-600 border-slate-200"}`}>{u.role}</span>
+                      {u.role !== "admin" && (
+                        <button onClick={() => handleDeleteUser(u.email)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors" data-testid={`delete-user-${u.email}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+          )}
         </motion.div>
       </div>
     </div>
