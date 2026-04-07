@@ -1,0 +1,118 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 1: Organic & Earthy",
+  "typography": {
+    "heading_font": "Cormorant Garamond",
+    "body_font": "Outfit",
+    "font_install_instructions": "Add Google Fonts imports for 'Cormorant Garamond' (weights 400,600,700) and 'Outfit' (weights 300,400,500,600).",
+    "hierarchy": {
+      "h1": "text-5xl sm:text-6xl lg:text-7xl font-semibold tracking-tight leading-none",
+      "h2": "text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight",
+      "h3": "text-xl sm:text-2xl font-medium",
+      "body": "text-base sm:text-lg leading-relaxed text-muted-foreground",
+      "overline": "text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-secondary"
+    }
+  },
+  "colors": {
+    "background": "#FAFAF8",
+    "foreground": "#1C1917",
+    "primary": "#1E3A8A",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#EA580C",
+    "secondary_foreground": "#FFFFFF",
+    "accent_green": "#16A34A",
+    "accent_green_foreground": "#FFFFFF",
+    "surface": "#FFFFFF",
+    "border": "#E5E5E4",
+    "muted": "#F5F5F0",
+    "muted_foreground": "#57534E",
+    "destructive": "#DC2626",
+    "destructive_foreground": "#FFFFFF"
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "Use p-6, p-8, p-12, p-16, p-24 for generous breathing room.",
+    "container_max_width": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_strategy": "MODE A: TETRIS GRID for Home page missions showcase. MODE B: CONTROL ROOM for Dashboard. Mobile-first grid-cols-1.",
+    "border_radius": "rounded-2xl for main cards, rounded-full for buttons."
+  },
+  "components_strategy": {
+    "navigation": "Sticky crystal glass header: `fixed top-0 w-full z-50 backdrop-blur-xl bg-white/80 border-b border-border/40`. Include 'Donate Now' CTA (orange) and language toggle (EN/HI).",
+    "buttons": "Primary (Blue) for standard actions, Secondary (Orange) for 'Donate' / high-impact actions. Use hover effects: `hover:-translate-y-0.5 transition-transform duration-200 shadow-sm hover:shadow-md`.",
+    "forms": "Use Shadcn UI (Inputs, Textarea, Select, Labels). Generous padding, clean labels. Include `data-testid` on all inputs and submit buttons.",
+    "cards": "Subtle Neumorphic/Flat style. Background `#FFFFFF`, border `1px solid #E5E5E4`, shadow `shadow-sm hover:shadow-md transition-shadow`. Padding `p-6` or `p-8`.",
+    "marquee": "Use `react-fast-marquee` for a slow, elegant editorial ribbon showing Mission names (e.g., '✦ MISSION SHAKTI ✦ MISSION ROSHNI ✦ ...') across the screen with a light sand background.",
+    "hero_overlay": "Gradient overlay on hero image: `bg-gradient-to-b from-black/60 via-black/40 to-transparent` to ensure text readability."
+  },
+  "animations": {
+    "library": "framer-motion",
+    "page_transitions": "Fade in with slight upward motion (`initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}`).",
+    "scroll_effects": "Use lenis for smooth scrolling globally. Stagger children in grids."
+  },
+  "media": {
+    "logo": "https://customer-assets.emergentagent.com/job_hifi-missions-hub/artifacts/uwadkxcp_WhatsApp%20Image%202026-03-28%20at%2013.10.29.jpeg",
+    "hero_main": "https://static.prod-images.emergentagent.com/jobs/eb786841-f4b3-4f51-a976-9339abd84bf7/images/2f70aef452a347f4934fa3ddb7b8ee9bcbe31d21d79bfbc599140df9a377768b.png",
+    "mission_shakti_women": "https://static.prod-images.emergentagent.com/jobs/eb786841-f4b3-4f51-a976-9339abd84bf7/images/3243fc690f87e35e0c2c5b569b69b7d720778bd54712e0b66475632684d0315f.png",
+    "mission_swabhiman_health": "https://images.unsplash.com/photo-1708593337380-6f97a307696f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHw0fHxpbmRpYW4lMjB3b21lbiUyMHJ1cmFsJTIwaGVhbHRoJTIwYXdhcmVuZXNzfGVufDB8fHx8MTc3NTU0ODQ0Mnww&ixlib=rb-4.1.0&q=85",
+    "mission_roshni_education": "https://images.unsplash.com/photo-1692269725836-fbd72e98883f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwzfHxpbmRpYW4lMjBjaGlsZHJlbiUyMGVkdWNhdGlvbiUyMHNjaG9vbCUyMHJ1cmFsfGVufDB8fHx8MTc3NTU0ODQyNnww&ixlib=rb-4.1.0&q=85",
+    "mission_koibhookhanasoye_food": "https://images.unsplash.com/photo-1677128912094-36d988ce198b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxmb29kJTIwZGlzdHJpYnV0aW9uJTIwY2hhcml0eSUyMGluZGlhfGVufDB8fHx8MTc3NTU0ODQyNnww&ixlib=rb-4.1.0&q=85",
+    "mission_paryavaran_environment": "https://images.unsplash.com/photo-1708592946248-c7ba5f036436?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTB8MHwxfHNlYXJjaHwxfHxwbGFudGluZyUyMHRyZWVzJTIwdm9sdW50ZWVycyUyMGluZGlhfGVufDB8fHx8MTc3NTU0ODQ0Mnww&ixlib=rb-4.1.0&q=85",
+    "mission_karuna_animals": "https://images.unsplash.com/photo-1679390974280-3899379f1c65?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MTN8MHwxfHNlYXJjaHwxfHxoZWxwaW5nJTIwc3RyZWV0JTIwZG9ncyUyMGluZGlhfGVufDB8fHx8MTc3NTU0ODQ0Mnww&ixlib=rb-4.1.0&q=85",
+    "mission_paridhan_clothes": "https://images.unsplash.com/photo-1729175086207-c94980269fbc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHw0fHxjbG90aGVzJTIwZGlzdHJpYnV0aW9uJTIwY2hhcml0eSUyMGluZGlhfGVufDB8fHx8MTc3NTU0ODQ0Mnww&ixlib=rb-4.1.0&q=85",
+    "volunteers": "https://images.unsplash.com/photo-1758599668429-121d54188b9c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHw0fHxpbmRpYW4lMjBuZ28lMjB2b2x1bnRlZXJzJTIwaGVscGluZyUyMHBlb3BsZSUyMGNvbW11bml0eXxlbnwwfHx8fDE3NzU1NDg0MjZ8MA&ixlib=rb-4.1.0&q=85",
+    "razorpay_logo": "https://images.unsplash.com/photo-1668904049173-3d3cd59e13d6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwyfHxyYXpvcnBheSUyMGxvZ28lMjBwYXltZW50c3xlbnwwfHx8fDE3NzU1NDg0NDN8MA&ixlib=rb-4.1.0&q=85",
+    "texture_paper": "https://static.prod-images.emergentagent.com/jobs/eb786841-f4b3-4f51-a976-9339abd84bf7/images/6ffa4ecceef37108cc92b7a6640acb34c79a21d41fb89ca56e6f4730ab0f36f0.png"
+  },
+  "pages_and_routes": [
+    {
+      "path": "/",
+      "name": "Home",
+      "description": "Hero section with background image, Marquee with missions, 7 Missions Bento Grid, Call to action for Volunteering & Donating."
+    },
+    {
+      "path": "/about",
+      "name": "About Us",
+      "description": "NGO Story, Vision, Legal Section 8 details. Use lots of text spacing and images of volunteers."
+    },
+    {
+      "path": "/missions",
+      "name": "Missions",
+      "description": "Grid of all 7 missions. Each linking to a detailed individual mission view."
+    },
+    {
+      "path": "/donate",
+      "name": "Donate",
+      "description": "High-trust donation page. Form to select amounts, fields for PAN/80G, and a mock Razorpay integration section."
+    },
+    {
+      "path": "/volunteer",
+      "name": "Volunteer",
+      "description": "Registration form to join drives (Blood donation, Langar) and support missions."
+    },
+    {
+      "path": "/contact",
+      "name": "Contact",
+      "description": "Contact info, address, Query form with a dropdown selecting the specific Mission."
+    },
+    {
+      "path": "/login",
+      "name": "Login / Dashboard",
+      "description": "Clean auth page leading to a Dashboard showing user's donation history or certificates."
+    }
+  ],
+  "accessibility_and_testing": {
+    "contrast": "Ensure all text meets APCA/WCAG standards. Use white text on the primary blue and secondary orange.",
+    "testing": "All interactive elements (buttons, links, form inputs, dropdowns) MUST have a `data-testid` attribute (e.g., `data-testid='donate-submit-btn'`).",
+    "motion": "Respect prefers-reduced-motion for framer-motion setups."
+  },
+  "instructions_to_main_agent": [
+    "Use Tailwind CSS for all styling based on the provided color palette.",
+    "Install and use `lucide-react` for icons.",
+    "Use Shadcn UI for structured components like forms, inputs, select dropdowns, and dialogs. Customize them to fit the border-radius and colors specified.",
+    "For the hero background, use the `hero_main` image and apply a dark overlay to ensure the white `Cormorant Garamond` heading is perfectly readable.",
+    "Build the 7 missions section on the Home page using a Bento grid (Tetris grid) with overlapping elements.",
+    "Create the Hindi language version toggle visually (can mock the logic, but the UI must exist in the header).",
+    "Add Razorpay logo securely on the Donate page to build trust.",
+    "Create placeholders/mock functionalities for the user dashboard.",
+    "Do NOT use 'Inter' for headings. Strictly use the specified fonts."
+  ]
+}
