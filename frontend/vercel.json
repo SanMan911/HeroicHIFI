@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm install --legacy-peer-deps && CI=false npm run build",
+  "outputDirectory": "build",
+  "installCommand": "npm install --legacy-peer-deps",
+  "framework": null,
+  "rewrites": [
+    { "source": "/((?!static|favicon|manifest|logo|asset-manifest).*)", "destination": "/index.html" }
+  ]
+}
