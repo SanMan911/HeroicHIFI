@@ -6,14 +6,14 @@ services:
   - type: web
     name: heroic-hifi-backend
     runtime: python
-    region: singapore  # closest to India
+    region: singapore
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ -r requirements.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
-    plan: free  # change to "starter" ($7/mo) for always-on
+    plan: free
     envVars:
       - key: MONGO_URL
-        sync: false  # you'll paste your MongoDB Atlas connection string
+        sync: false
       - key: DB_NAME
         value: heroic_hifi
       - key: JWT_SECRET
@@ -29,16 +29,15 @@ services:
       - key: ADMIN_PASSWORD
         value: HHF@admin2024
       - key: CORS_ORIGINS
-        value: "*"  # update to your frontend URL after deploy
+        value: "*"
       - key: FRONTEND_URL
-        sync: false  # paste your frontend URL after deploy
+        sync: false
       - key: PYTHON_VERSION
         value: "3.11.0"
 
-  # React Frontend (Static Site — always free on Render)
-  - type: web
-    name: heroic-hifi-frontend
-    runtime: static
+staticSites:
+  # React Frontend (always free on Render)
+  - name: heroic-hifi-frontend
     rootDir: frontend
     buildCommand: yarn install && yarn build
     staticPublishPath: build
@@ -52,4 +51,4 @@ services:
         destination: /index.html
     envVars:
       - key: REACT_APP_BACKEND_URL
-        sync: false  # paste your backend URL after deploy
+        sync: false
