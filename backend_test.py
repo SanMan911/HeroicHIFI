@@ -29,6 +29,8 @@ class HeroicHIFIAPITester:
                 response = requests.get(url, headers=test_headers, timeout=10)
             elif method == 'POST':
                 response = requests.post(url, json=data, headers=test_headers, timeout=10)
+            elif method == 'PUT':
+                response = requests.put(url, json=data, headers=test_headers, timeout=10)
 
             success = response.status_code == expected_status
             if success:
@@ -146,6 +148,104 @@ class HeroicHIFIAPITester:
         }
         return self.run_test("Submit Query", "POST", "queries", 200, data=query_data)
 
+    def test_razorpay_create_order(self):
+        """Test Razorpay create order endpoint (should return null order_id when keys not set)"""
+        donation_data = {
+            "name": "Test Razorpay Donor",
+            "email": "testrazorpay@example.com",
+            "phone": "9876543210",
+            "amount": 2000,
+            "pan_number": "ABCDE1234F",
+            "message": "Test Razorpay donation"
+        }
+        success, response = self.run_test("Create Razorpay Order", "POST", "donations/create-order", 200, data=donation_data)
+        if success:
+            # Should return razorpay_order_id=null when keys not configured
+            if response.get('razorpay_order_id') is None:
+                print("   ✅ Correctly returned null order_id (Razorpay keys not configured)")
+            else:
+                print("   ⚠️  Unexpected: Got razorpay_order_id when keys should not be set")
+        return success, response
+
+    def test_admin_stats(self):
+        """Test admin stats endpoint (requires admin auth)"""
+        return self.run_test("Get Admin Stats", "GET", "admin/stats", 200)
+
+    def test_admin_donations(self):
+        """Test admin donations list endpoint"""
+        return self.run_test("Get Admin Donations", "GET", "admin/donations", 200)
+
+    def test_admin_volunteers(self):
+        """Test admin volunteers list endpoint"""
+        return self.run_test("Get Admin Volunteers", "GET", "admin/volunteers", 200)
+
+    def test_admin_queries(self):
+        """Test admin queries list endpoint"""
+        return self.run_test("Get Admin Queries", "GET", "admin/queries", 200)
+
+    def test_admin_update_donation_status(self, donation_id, status):
+        """Test updating donation status"""
+        return self.run_test(
+            f"Update Donation Status to {status}",
+            "PUT",
+            f"admin/donations/{donation_id}/status",
+            200,
+            data={"status": status}
+        )
+
+    def test_admin_update_volunteer_status(self, volunteer_id, status):
+        """Test updating volunteer status"""
+        return self.run_test(
+            f"Update Volunteer Status to {status}",
+            "PUT",
+            f"admin/volunteers/{volunteer_id}/status",
+            200,
+            data={"status": status}
+        )
+
+    def test_admin_update_query_status(self, query_id, status):
+        """Test updating query status"""
+        return self.run_test(
+            f"Update Query Status to {status}",
+            "PUT",
+            f"admin/queries/{query_id}/status",
+            200,
+            data={"status": status}
+        )
+
+    def test_non_admin_access(self):
+        """Test that non-admin users get 403 on admin endpoints"""
+        # First register a regular user and login
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        test_email = f"nonadmin_{timestamp}@example.com"
+        
+        # Register regular user
+        reg_success, reg_response = self.run_test(
+            "Register Non-Admin User",
+            "POST",
+            "auth/register",
+            200,
+            data={"name": "Non Admin User", "email": test_email, "password": "TestPass123!"}
+        )
+        
+        if reg_success and 'token' in reg_response:
+            # Store current admin token
+            admin_token = self.token
+            # Use non-admin token
+            self.token = reg_response['token']
+            
+            # Test admin endpoints should return 403
+            print("\n   Testing non-admin access to admin endpoints...")
+            self.run_test("Non-Admin Stats Access", "GET", "admin/stats", 403)
+            self.run_test("Non-Admin Donations Access", "GET", "admin/donations", 403)
+            self.run_test("Non-Admin Volunteers Access", "GET", "admin/volunteers", 403)
+            self.run_test("Non-Admin Queries Access", "GET", "admin/queries", 403)
+            
+            # Restore admin token
+            self.token = admin_token
+            return True
+        return False
+
 def main():
     print("🚀 Starting Heroic HIFI Foundation API Testing")
     print("=" * 60)
@@ -191,9 +291,49 @@ def main():
     # Test form submissions
     print("\n📝 TESTING FORM SUBMISSIONS")
     print("-" * 40)
-    tester.test_create_donation()
-    tester.test_create_volunteer()
-    tester.test_create_query()
+    donation_success, donation_response = tester.test_create_donation()
+    volunteer_success, volunteer_response = tester.test_create_volunteer()
+    query_success, query_response = tester.test_create_query()
+    
+    # Test Razorpay create order (should return null when keys not set)
+    print("\n💳 TESTING RAZORPAY INTEGRATION")
+    print("-" * 40)
+    tester.test_razorpay_create_order()
+    
+    # Test admin endpoints (need admin login first)
+    print("\n👑 TESTING ADMIN ENDPOINTS")
+    print("-" * 40)
+    
+    # Re-login as admin for admin tests
+    admin_login_success, _ = tester.test_login(admin_email, admin_password)
+    
+    if admin_login_success:
+        # Test admin stats and lists
+        tester.test_admin_stats()
+        admin_donations_success, admin_donations = tester.test_admin_donations()
+        admin_volunteers_success, admin_volunteers = tester.test_admin_volunteers()
+        admin_queries_success, admin_queries = tester.test_admin_queries()
+        
+        # Test status updates if we have data
+        if admin_donations_success and admin_donations and len(admin_donations) > 0:
+            donation_id = admin_donations[0].get('id')
+            if donation_id:
+                tester.test_admin_update_donation_status(donation_id, "confirmed")
+        
+        if admin_volunteers_success and admin_volunteers and len(admin_volunteers) > 0:
+            volunteer_id = admin_volunteers[0].get('id')
+            if volunteer_id:
+                tester.test_admin_update_volunteer_status(volunteer_id, "approved")
+        
+        if admin_queries_success and admin_queries and len(admin_queries) > 0:
+            query_id = admin_queries[0].get('id')
+            if query_id:
+                tester.test_admin_update_query_status(query_id, "responded")
+        
+        # Test non-admin access restrictions
+        print("\n🚫 TESTING NON-ADMIN ACCESS RESTRICTIONS")
+        print("-" * 40)
+        tester.test_non_admin_access()
     
     # Print results
     print("\n" + "=" * 60)

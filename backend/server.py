@@ -245,6 +245,134 @@ async def get_mission(slug: str):
             return m
     raise HTTPException(status_code=404, detail="Mission not found")
 
+# ── Admin dependency ──
+async def require_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+class StatusUpdate(BaseModel):
+    status: str
+
+# ── Admin Routes ──
+@api_router.get("/admin/stats")
+async def admin_stats(user: dict = Depends(require_admin)):
+    total_donations = await db.donations.count_documents({})
+    pipeline = [{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]
+    agg = await db.donations.aggregate(pipeline).to_list(1)
+    total_amount = agg[0]["total"] if agg else 0
+    confirmed_donations = await db.donations.count_documents({"status": "confirmed"})
+    total_volunteers = await db.volunteers.count_documents({})
+    approved_volunteers = await db.volunteers.count_documents({"status": "approved"})
+    total_queries = await db.queries.count_documents({})
+    open_queries = await db.queries.count_documents({"status": "open"})
+    return {
+        "donations": {"total": total_donations, "confirmed": confirmed_donations, "total_amount": total_amount},
+        "volunteers": {"total": total_volunteers, "approved": approved_volunteers},
+        "queries": {"total": total_queries, "open": open_queries},
+    }
+
+@api_router.get("/admin/donations")
+async def admin_list_donations(user: dict = Depends(require_admin)):
+    items = await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+@api_router.put("/admin/donations/{item_id}/status")
+async def admin_update_donation_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
+    result = await db.donations.update_one({"id": item_id}, {"$set": {"status": data.status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    return {"message": "Donation status updated", "status": data.status}
+
+@api_router.get("/admin/volunteers")
+async def admin_list_volunteers(user: dict = Depends(require_admin)):
+    items = await db.volunteers.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+@api_router.put("/admin/volunteers/{item_id}/status")
+async def admin_update_volunteer_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
+    result = await db.volunteers.update_one({"id": item_id}, {"$set": {"status": data.status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Volunteer not found")
+    return {"message": "Volunteer status updated", "status": data.status}
+
+@api_router.get("/admin/queries")
+async def admin_list_queries(user: dict = Depends(require_admin)):
+    items = await db.queries.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+@api_router.put("/admin/queries/{item_id}/status")
+async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
+    result = await db.queries.update_one({"id": item_id}, {"$set": {"status": data.status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Query not found")
+    return {"message": "Query status updated", "status": data.status}
+
+# ── Razorpay Donation Flow ──
+@api_router.post("/donations/create-order")
+async def create_razorpay_order(data: DonationInput):
+    rz_key = os.environ.get("RAZORPAY_KEY_ID")
+    rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
+    donation_id = str(uuid.uuid4())
+    doc = {
+        "id": donation_id,
+        "name": data.name,
+        "email": data.email.lower().strip(),
+        "phone": data.phone,
+        "amount": data.amount,
+        "pan_number": data.pan_number,
+        "message": data.message,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    if rz_key and rz_secret:
+        import razorpay
+        rz_client = razorpay.Client(auth=(rz_key, rz_secret))
+        order_data = {
+            "amount": data.amount * 100,
+            "currency": "INR",
+            "receipt": donation_id,
+            "notes": {"donor_name": data.name, "donor_email": data.email}
+        }
+        order = rz_client.order.create(data=order_data)
+        doc["razorpay_order_id"] = order["id"]
+        await db.donations.insert_one(doc)
+        doc.pop("_id", None)
+        return {"donation": doc, "razorpay_order_id": order["id"], "razorpay_key": rz_key, "amount": data.amount * 100, "currency": "INR"}
+    else:
+        await db.donations.insert_one(doc)
+        doc.pop("_id", None)
+        return {"donation": doc, "razorpay_order_id": None, "message": "Razorpay keys not configured. Donation recorded for manual follow-up."}
+
+@api_router.post("/donations/verify-payment")
+async def verify_razorpay_payment(request: Request):
+    body = await request.json()
+    razorpay_order_id = body.get("razorpay_order_id")
+    razorpay_payment_id = body.get("razorpay_payment_id")
+    razorpay_signature = body.get("razorpay_signature")
+    donation_id = body.get("donation_id")
+    rz_key = os.environ.get("RAZORPAY_KEY_ID")
+    rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
+    if not rz_key or not rz_secret:
+        raise HTTPException(status_code=500, detail="Razorpay not configured")
+    import razorpay
+    rz_client = razorpay.Client(auth=(rz_key, rz_secret))
+    try:
+        rz_client.utility.verify_payment_signature({
+            "razorpay_order_id": razorpay_order_id,
+            "razorpay_payment_id": razorpay_payment_id,
+            "razorpay_signature": razorpay_signature,
+        })
+        await db.donations.update_one(
+            {"id": donation_id},
+            {"$set": {"status": "confirmed", "razorpay_payment_id": razorpay_payment_id, "razorpay_signature": razorpay_signature}}
+        )
+        return {"message": "Payment verified successfully", "status": "confirmed"}
+    except razorpay.errors.SignatureVerificationError:
+        await db.donations.update_one({"id": donation_id}, {"$set": {"status": "failed"}})
+        raise HTTPException(status_code=400, detail="Payment verification failed")
+
 # ── Donations Routes ──
 @api_router.post("/donations")
 async def create_donation(data: DonationInput):
@@ -261,7 +389,7 @@ async def create_donation(data: DonationInput):
     }
     await db.donations.insert_one(doc)
     doc.pop("_id", None)
-    return {"message": "Donation recorded successfully. Razorpay payment integration will be activated soon.", "donation": doc}
+    return {"message": "Donation recorded successfully.", "donation": doc}
 
 @api_router.get("/donations")
 async def list_donations(user: dict = Depends(get_current_user)):
