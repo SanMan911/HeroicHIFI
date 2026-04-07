@@ -1213,9 +1213,12 @@ async def startup():
         logger.info(f"Admin seeded: {admin_email}")
     elif not verify_password(admin_password, existing["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
-    creds_path = Path("/app/memory/test_credentials.md")
-    creds_path.parent.mkdir(parents=True, exist_ok=True)
-    creds_path.write_text(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n")
+    try:
+        creds_path = Path("/app/memory/test_credentials.md")
+        creds_path.parent.mkdir(parents=True, exist_ok=True)
+        creds_path.write_text(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n")
+    except (PermissionError, OSError):
+        pass
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
