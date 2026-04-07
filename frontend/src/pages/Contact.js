@@ -27,7 +27,7 @@ export default function Contact() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.subject || !form.message) {
-      toast.error(lang === "hi" ? "कृपया सभी आवश्यक फ़ील्ड भरें" : "Please fill all required fields");
+      toast.error(t.fill_required);
       return;
     }
     setSubmitting(true);
@@ -88,8 +88,8 @@ export default function Contact() {
                           {lang === "hi" ? m.name_hi : m.name}
                         </SelectItem>
                       ))}
-                      <SelectItem value="blood-donation">{lang === "hi" ? "रक्तदान अभियान" : "Blood Donation Drives"}</SelectItem>
-                      <SelectItem value="langar">{lang === "hi" ? "सामुदायिक भोजन (लंगर)" : "Community Kitchen (Langar)"}</SelectItem>
+                      <SelectItem value="blood-donation">{t.blood_drives}</SelectItem>
+                      <SelectItem value="langar">{t.langar}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -110,7 +110,7 @@ export default function Contact() {
                   className="w-full bg-[#0D2847] hover:bg-[#0D2847]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                   data-testid="contact-submit-btn"
                 >
-                  {submitting ? (lang === "hi" ? "भेज रहे हैं..." : "Sending...") : t.submit}
+                  {submitting ? t.sending : t.submit}
                 </Button>
               </form>
             </div>

@@ -33,7 +33,7 @@ export default function Volunteer() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.phone || !form.city) {
-      toast.error(lang === "hi" ? "कृपया सभी आवश्यक फ़ील्ड भरें" : "Please fill all required fields");
+      toast.error(t.fill_required);
       return;
     }
     setSubmitting(true);
@@ -105,11 +105,11 @@ export default function Volunteer() {
                 ))}
                 <label className="flex items-center gap-3 p-3 rounded-xl border border-sky-100 hover:bg-stone-50 cursor-pointer transition-colors" data-testid="volunteer-interest-blood">
                   <Checkbox checked={form.interests.includes("blood-donation")} onCheckedChange={() => toggleInterest("blood-donation")} />
-                  <span className="text-sm text-stone-700">{lang === "hi" ? "रक्तदान अभियान" : "Blood Donation Drives"}</span>
+                  <span className="text-sm text-stone-700">{t.blood_drives}</span>
                 </label>
                 <label className="flex items-center gap-3 p-3 rounded-xl border border-sky-100 hover:bg-stone-50 cursor-pointer transition-colors" data-testid="volunteer-interest-langar">
                   <Checkbox checked={form.interests.includes("langar")} onCheckedChange={() => toggleInterest("langar")} />
-                  <span className="text-sm text-stone-700">{lang === "hi" ? "सामुदायिक भोजन (लंगर)" : "Community Kitchen (Langar)"}</span>
+                  <span className="text-sm text-stone-700">{t.langar}</span>
                 </label>
               </div>
             </div>
@@ -125,7 +125,7 @@ export default function Volunteer() {
               className="w-full bg-[#1E56A0] hover:bg-[#1E56A0]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               data-testid="volunteer-submit-btn"
             >
-              {submitting ? (lang === "hi" ? "कृपया प्रतीक्षा करें..." : "Submitting...") : t.submit}
+              {submitting ? t.submitting : t.submit}
             </Button>
           </form>
         </div>

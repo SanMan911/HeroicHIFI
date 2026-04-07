@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useLang } from "../context/LanguageContext";
+import translations from "../data/translations";
 import api from "../lib/api";
 import { MEDIA } from "../data/missions";
 import { Button } from "../components/ui/button";
@@ -12,6 +13,7 @@ const iconMap = { Sparkles, Heart, BookOpen, UtensilsCrossed, TreePine, PawPrint
 export default function MissionDetail() {
   const { slug } = useParams();
   const { lang } = useLang();
+  const t = translations[lang].missions;
   const [mission, setMission] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,8 +24,8 @@ export default function MissionDetail() {
     }).catch(() => setLoading(false));
   }, [slug]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-stone-400">Loading...</div>;
-  if (!mission) return <div className="min-h-screen flex items-center justify-center text-stone-400">Mission not found</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-stone-400">{t.loading}</div>;
+  if (!mission) return <div className="min-h-screen flex items-center justify-center text-stone-400">{t.not_found}</div>;
 
   const Icon = iconMap[mission.icon];
   const imageKey = mission.image_key;
@@ -36,7 +38,7 @@ export default function MissionDetail() {
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 pb-16 w-full">
           <Link to="/missions" className="inline-flex items-center gap-2 text-white/70 hover:text-white mb-6 text-sm transition-colors" data-testid="back-to-missions">
-            <ArrowLeft className="w-4 h-4" /> {lang === "hi" ? "सभी मिशन" : "All Missions"}
+            <ArrowLeft className="w-4 h-4" /> {t.all_missions}
           </Link>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: mission.color }}>
@@ -63,17 +65,17 @@ export default function MissionDetail() {
           <div className="flex flex-col sm:flex-row gap-4">
             <Link to="/donate">
               <Button className="bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full px-8 py-3" data-testid="mission-donate-btn">
-                {lang === "hi" ? "इस मिशन के लिए दान करें" : "Donate to This Mission"}
+                {t.donate_mission}
               </Button>
             </Link>
             <Link to="/volunteer">
               <Button variant="outline" className="border-[#1E56A0] text-[#1E56A0] hover:bg-[#1E56A0]/5 rounded-full px-8 py-3" data-testid="mission-volunteer-btn">
-                {lang === "hi" ? "स्वयंसेवक बनें" : "Volunteer for This Mission"}
+                {t.volunteer_mission}
               </Button>
             </Link>
             <Link to={`/contact?mission=${slug}`}>
               <Button variant="outline" className="border-sky-200 text-slate-600 hover:bg-sky-50 rounded-full px-8 py-3" data-testid="mission-query-btn">
-                {lang === "hi" ? "प्रश्न पूछें" : "Ask a Query"}
+                {t.ask_query}
               </Button>
             </Link>
           </div>

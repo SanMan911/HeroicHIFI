@@ -37,7 +37,7 @@ export default function Donate() {
   });
   const [customAmount, setCustomAmount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(null); // null | { donation }
+  const [success, setSuccess] = useState(null);
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpToken, setOtpToken] = useState("");
@@ -65,7 +65,7 @@ export default function Donate() {
     try {
       const { data } = await api.post("/auth/verify-otp", { email: form.email, otp, purpose: "donation" });
       setOtpToken(data.otp_token);
-      toast.success("Email verified!");
+      toast.success(t.verify_email);
       setOtpStep(false);
       submitDonation(data.otp_token);
     } catch (err) {
@@ -80,7 +80,7 @@ export default function Donate() {
       const { data } = await api.post("/donations/create-order", payload);
       if (data.razorpay_order_id) {
         const loaded = await loadRazorpayScript();
-        if (!loaded) { toast.error("Failed to load payment gateway."); setSubmitting(false); return; }
+        if (!loaded) { toast.error(t.gateway_fail); setSubmitting(false); return; }
         const options = {
           key: data.razorpay_key, amount: data.amount, currency: data.currency,
           name: "Heroic HIFI Foundation", description: "Donation",
@@ -88,9 +88,9 @@ export default function Donate() {
           handler: async (response) => {
             try {
               await api.post("/donations/verify-payment", { ...response, donation_id: data.donation.id });
-              toast.success(lang === "hi" ? "दान सफल!" : "Donation successful!");
+              toast.success(t.success);
               setSuccess({ donation: { ...data.donation, status: "confirmed" } });
-            } catch { toast.error("Payment verification failed."); }
+            } catch { toast.error(t.payment_fail); }
             setSubmitting(false);
           },
           prefill: { name: form.name, email: form.email, contact: form.phone },
@@ -99,7 +99,7 @@ export default function Donate() {
         };
         new window.Razorpay(options).open();
       } else {
-        toast.success(data.message || "Donation recorded.");
+        toast.success(data.message || t.recorded);
         setSuccess({ donation: data.donation });
         setSubmitting(false);
       }
@@ -112,7 +112,7 @@ export default function Donate() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.phone || !form.amount || !form.pan_number) {
-      toast.error("Please fill all required fields including PAN number.");
+      toast.error(t.fill_required_pan);
       return;
     }
     setSubmitting(true);
@@ -147,17 +147,17 @@ export default function Donate() {
                 <CheckCircle className="w-10 h-10 text-green-600" />
               </div>
               <h2 className="text-2xl sm:text-3xl font-semibold text-[#0D2847] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                {lang === "hi" ? "आपका हृदय से धन्यवाद!" : "Thank You for Your Generosity!"}
+                {t.thank_you}
               </h2>
-              <p className="text-slate-500 mb-8">{lang === "hi" ? "आपका दान दर्ज हो गया है।" : "Your donation has been recorded."}</p>
+              <p className="text-slate-500 mb-8">{t.recorded}</p>
               {success.donation?.pan_number && (
                 <Button onClick={handleDownloadCertificate} className="bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full px-8 py-3 mb-4 gap-2" data-testid="download-certificate-btn">
-                  <Download className="w-4 h-4" /> {lang === "hi" ? "80G प्रमाणपत्र डाउनलोड करें" : "Download 80G Certificate (PDF)"}
+                  <Download className="w-4 h-4" /> {t.download_cert}
                 </Button>
               )}
               <br />
               <Button onClick={() => { setSuccess(null); setForm({ name: user?.name || "", email: user?.email || "", phone: user?.phone || "", amount: "", pan_number: user?.pan_number || "", aadhaar_number: user?.aadhaar_number || "", address: user?.address || "", message: "" }); }} variant="outline" className="rounded-full px-8 py-3 mt-2" data-testid="donate-again-btn">
-                {lang === "hi" ? "पुनः दान करें" : "Donate Again"}
+                {t.donate_again}
               </Button>
             </motion.div>
           </div>
@@ -180,23 +180,23 @@ export default function Donate() {
         <section className="py-16 sm:py-24">
           <div className="max-w-md mx-auto px-4 sm:px-6 text-center">
             <button onClick={() => setOtpStep(false)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-[#1E56A0] mb-6 mx-auto" data-testid="back-to-donate-form">
-              <ArrowLeft className="w-4 h-4" /> Back to form
+              <ArrowLeft className="w-4 h-4" /> {t.back_to_form}
             </button>
             <div className="w-14 h-14 rounded-full bg-[#1E56A0]/10 flex items-center justify-center mx-auto mb-4">
               <Mail className="w-7 h-7 text-[#1E56A0]" />
             </div>
-            <h2 className="text-2xl font-semibold text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Verify Your Email</h2>
-            <p className="text-sm text-slate-500 mb-6">OTP sent to <strong className="text-[#0D2847]">{form.email}</strong></p>
+            <h2 className="text-2xl font-semibold text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.verify_email}</h2>
+            <p className="text-sm text-slate-500 mb-6">{t.otp_sent_to} <strong className="text-[#0D2847]">{form.email}</strong></p>
             {otpDebug && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-                <p className="text-xs text-amber-700">Resend API key not set. Debug OTP:</p>
+                <p className="text-xs text-amber-700">{t.debug_otp_notice}</p>
                 <p className="text-2xl font-bold text-amber-800 tracking-[0.3em] mt-1" data-testid="donate-debug-otp">{otpDebug}</p>
               </div>
             )}
             <Input value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="000000" maxLength={6}
               className="rounded-xl text-center text-2xl tracking-[0.3em] font-semibold mb-4" data-testid="donate-otp-input" />
             <Button onClick={handleVerifyOtp} disabled={submitting} className="w-full bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full py-3" data-testid="donate-verify-otp-btn">
-              {submitting ? "Verifying..." : "Verify & Proceed to Donate"}
+              {submitting ? t.verifying : t.verify_donate}
             </Button>
           </div>
         </section>
@@ -222,7 +222,7 @@ export default function Donate() {
           {user && (
             <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 flex items-start gap-3" data-testid="logged-in-notice">
               <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
-              <p className="text-sm text-green-800">Logged in as <strong>{user.name}</strong>. Your profile details are pre-filled. Email verification skipped.</p>
+              <p className="text-sm text-green-800">{t.logged_in_as} <strong>{user.name}</strong>. {t.logged_in_notice}</p>
             </div>
           )}
           <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 mb-8 flex items-start gap-3" data-testid="razorpay-note">
@@ -268,16 +268,16 @@ export default function Donate() {
               <div>
                 <Label className="text-sm font-medium text-slate-700">{t.pan} *</Label>
                 <Input name="pan_number" value={form.pan_number} onChange={handleChange} className="mt-1.5 rounded-xl" data-testid="donate-pan-input" placeholder="ABCDE1234F" required />
-                <p className="text-xs text-slate-400 mt-1">Mandatory for 80G provisional certificate (50% rebate)</p>
+                <p className="text-xs text-slate-400 mt-1">{t.pan_help}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium text-slate-700">Aadhaar Number</Label>
+                <Label className="text-sm font-medium text-slate-700">{t.aadhaar}</Label>
                 <Input name="aadhaar_number" value={form.aadhaar_number} onChange={handleChange} className="mt-1.5 rounded-xl" data-testid="donate-aadhaar-input" placeholder="1234 5678 9012" />
               </div>
             </div>
 
             <div>
-              <Label className="text-sm font-medium text-slate-700">Address</Label>
+              <Label className="text-sm font-medium text-slate-700">{t.address}</Label>
               <Input name="address" value={form.address} onChange={handleChange} className="mt-1.5 rounded-xl" data-testid="donate-address-input" />
             </div>
 
@@ -290,7 +290,7 @@ export default function Donate() {
               className="w-full bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               data-testid="donate-submit-btn"
             >
-              {submitting ? "Processing..." : user ? t.submit : "Verify Email & Donate"}
+              {submitting ? t.processing : user ? t.submit : t.verify_email_donate}
             </Button>
           </form>
         </div>

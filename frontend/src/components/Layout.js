@@ -70,7 +70,7 @@ export function Header() {
                 <Link to="/community">
                   <Button variant="ghost" size="sm" className="text-sm hidden sm:inline-flex gap-1" data-testid="nav-community">
                     <Users className="w-4 h-4" />
-                    {lang === "hi" ? "समुदाय" : "Community"}
+                    {t.community}
                   </Button>
                 </Link>
                 <Link to="/dashboard">
@@ -128,7 +128,7 @@ export function Header() {
             <>
               <Link to="/community" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 py-3 px-4 text-sm text-slate-600" data-testid="mobile-nav-community">
                 <Users className="w-4 h-4" />
-                {lang === "hi" ? "समुदाय" : "Community"}
+                {t.community}
               </Link>
               <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-slate-600">{t.dashboard}</Link>
               <button onClick={() => { logout(); setMobileOpen(false); }} className="block py-3 px-4 text-sm text-slate-600 w-full text-left">{t.logout}</button>

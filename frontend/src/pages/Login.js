@@ -17,8 +17,9 @@ export default function Login() {
   const navigate = useNavigate();
   const { lang } = useLang();
   const t = translations[lang].login;
+  const tHero = translations[lang].hero;
   const [isRegister, setIsRegister] = useState(false);
-  const [regStep, setRegStep] = useState(1); // 1=form, 2=otp
+  const [regStep, setRegStep] = useState(1);
   const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", age: "", dob: "", address: "", pan_number: "", aadhaar_number: "" });
   const [otp, setOtp] = useState("");
   const [otpToken, setOtpToken] = useState("");
@@ -33,7 +34,7 @@ export default function Login() {
     setLoading(true); setError("");
     try {
       await login(form.email, form.password);
-      toast.success("Logged in successfully!");
+      toast.success(t.login_success);
       navigate("/dashboard");
     } catch (err) {
       const msg = formatApiError(err.response?.data?.detail);
@@ -44,7 +45,7 @@ export default function Login() {
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.password || !form.phone || !form.pan_number || !form.aadhaar_number) {
-      setError("Please fill all mandatory fields."); return;
+      setError(t.fill_mandatory); return;
     }
     setLoading(true); setError("");
     try {
@@ -60,7 +61,7 @@ export default function Login() {
 
   const handleVerifyAndRegister = async (e) => {
     e.preventDefault();
-    if (!otp) { setError("Please enter the OTP."); return; }
+    if (!otp) { setError(t.enter_otp_err); return; }
     setLoading(true); setError("");
     try {
       const { data: verifyData } = await api.post("/auth/verify-otp", { email: form.email, otp, purpose: "registration" });
@@ -69,7 +70,7 @@ export default function Login() {
       });
       localStorage.setItem("hhf_token", regData.token);
       localStorage.setItem("hhf_user", JSON.stringify(regData.user));
-      toast.success("Account created successfully!");
+      toast.success(t.account_created);
       window.location.href = "/dashboard";
     } catch (err) {
       const msg = formatApiError(err.response?.data?.detail);
@@ -90,7 +91,7 @@ export default function Login() {
             Heroic HIFI Foundation
           </h2>
           <p className="text-lg text-blue-200 leading-relaxed">
-            {lang === "hi" ? "हृदय और उद्देश्य से मानवता की सेवा" : "Serving Humanity with Heart & Purpose"}
+            {tHero.subtitle.split(".")[0]}.
           </p>
         </div>
       </div>
@@ -145,38 +146,38 @@ export default function Login() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-sm font-medium text-slate-700">Phone *</Label>
+                    <Label className="text-sm font-medium text-slate-700">{t.phone} *</Label>
                     <Input name="phone" value={form.phone} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-phone-input" required />
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-700">Age</Label>
+                    <Label className="text-sm font-medium text-slate-700">{t.age}</Label>
                     <Input name="age" type="number" value={form.age} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-age-input" />
                   </div>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-slate-700">Date of Birth</Label>
+                  <Label className="text-sm font-medium text-slate-700">{t.dob}</Label>
                   <Input name="dob" type="date" value={form.dob} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-dob-input" />
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-slate-700">Address</Label>
+                  <Label className="text-sm font-medium text-slate-700">{t.address}</Label>
                   <Input name="address" value={form.address} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-address-input" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-sm font-medium text-slate-700">PAN Number *</Label>
+                    <Label className="text-sm font-medium text-slate-700">{t.pan_label} *</Label>
                     <Input name="pan_number" value={form.pan_number} onChange={handleChange} placeholder="ABCDE1234F" className="mt-1 rounded-xl" data-testid="register-pan-input" required />
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-700">Aadhaar Number *</Label>
+                    <Label className="text-sm font-medium text-slate-700">{t.aadhaar_label} *</Label>
                     <Input name="aadhaar_number" value={form.aadhaar_number} onChange={handleChange} placeholder="1234 5678 9012" className="mt-1 rounded-xl" data-testid="register-aadhaar-input" required />
                   </div>
                 </div>
                 <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex gap-2 items-start">
                   <ShieldCheck className="w-4 h-4 text-[#1E56A0] mt-0.5 shrink-0" />
-                  <p className="text-xs text-slate-600">Your PAN and Aadhaar are required for 80G tax receipt generation. This data is kept confidential.</p>
+                  <p className="text-xs text-slate-600">{t.pan_aadhaar_note}</p>
                 </div>
                 <Button type="submit" disabled={loading} className="w-full bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full py-3 text-base font-medium" data-testid="register-send-otp-btn">
-                  {loading ? "Sending OTP..." : "Verify Email & Register"} <ArrowRight className="ml-2 w-4 h-4" />
+                  {loading ? t.sending_otp : t.verify_register} <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </form>
               <p className="text-sm text-slate-500 mt-6 text-center">
@@ -187,33 +188,33 @@ export default function Login() {
           ) : (
             <>
               <button onClick={() => setRegStep(1)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-[#1E56A0] mb-6" data-testid="back-to-form-btn">
-                <ArrowLeft className="w-4 h-4" /> Back to form
+                <ArrowLeft className="w-4 h-4" /> {t.back_to_form}
               </button>
               <div className="w-14 h-14 rounded-full bg-[#1E56A0]/10 flex items-center justify-center mx-auto mb-4">
                 <Mail className="w-7 h-7 text-[#1E56A0]" />
               </div>
-              <h2 className="text-2xl font-semibold text-[#0D2847] text-center mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Verify Your Email</h2>
+              <h2 className="text-2xl font-semibold text-[#0D2847] text-center mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.verify_email}</h2>
               <p className="text-sm text-slate-500 text-center mb-6">
-                We've sent a 6-digit OTP to <strong className="text-[#0D2847]">{form.email}</strong>
+                {t.otp_sent_to} <strong className="text-[#0D2847]">{form.email}</strong>
               </p>
               {otpDebug && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-center">
-                  <p className="text-xs text-amber-700">Resend API key not set. Debug OTP:</p>
+                  <p className="text-xs text-amber-700">{t.debug_otp_notice}</p>
                   <p className="text-2xl font-bold text-amber-800 tracking-[0.3em] mt-1" data-testid="debug-otp">{otpDebug}</p>
                 </div>
               )}
               {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-4">{error}</div>}
               <form onSubmit={handleVerifyAndRegister} className="space-y-5">
                 <div>
-                  <Label className="text-sm font-medium text-slate-700">Enter OTP</Label>
+                  <Label className="text-sm font-medium text-slate-700">{t.enter_otp}</Label>
                   <Input value={otp} onChange={(e) => { setOtp(e.target.value); setError(""); }} placeholder="000000" maxLength={6}
                     className="mt-1.5 rounded-xl text-center text-2xl tracking-[0.3em] font-semibold" data-testid="otp-input" required />
                 </div>
                 <Button type="submit" disabled={loading} className="w-full bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full py-3 text-base font-medium" data-testid="verify-otp-btn">
-                  {loading ? "Verifying..." : "Verify & Create Account"}
+                  {loading ? t.verifying : t.verify_create}
                 </Button>
                 <button type="button" onClick={handleSendOtp} className="block w-full text-center text-sm text-[#1E56A0] hover:underline" data-testid="resend-otp-btn">
-                  Resend OTP
+                  {t.resend_otp}
                 </button>
               </form>
             </>

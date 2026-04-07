@@ -58,7 +58,7 @@ export default function Missions() {
                         </h3>
                         <p className="text-sm text-stone-500 mb-4">{lang === "hi" ? mission.tagline_hi : mission.tagline}</p>
                         <span className="inline-flex items-center gap-1 text-sm font-medium text-[#1E56A0] group-hover:gap-2 transition-all">
-                          {lang === "hi" ? "और जानें" : "Learn More"} <ArrowRight className="w-4 h-4" />
+                          {t.missions.learn_more} <ArrowRight className="w-4 h-4" />
                         </span>
                       </div>
                     </div>
