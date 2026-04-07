@@ -61,7 +61,7 @@ function HeroSection() {
 
 function MissionsMarquee() {
   return (
-    <div className="bg-[#F5F5F0] py-4 border-y border-stone-200" data-testid="missions-marquee">
+    <div className="bg-gradient-to-r from-[#C8F2CE]/40 via-[#A7D9E8]/40 to-[#91C8E7]/40 py-4 border-y border-[#91C8E7]/20" data-testid="missions-marquee">
       <Marquee speed={40} gradient={false} pauseOnHover>
         {MISSIONS_CLIENT.map((m) => (
           <span key={m.slug} className="marquee-item">
@@ -136,7 +136,7 @@ function DrivesSection() {
   const t = translations[lang].home;
 
   return (
-    <section className="py-20 bg-[#EBF3F9]" data-testid="drives-section">
+    <section className="py-20 bg-gradient-to-r from-[#C8F2CE]/30 via-[#A7D9E8]/30 to-[#91C8E7]/30" data-testid="drives-section">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <p className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#16A34A] mb-3">{t.drives_subtitle}</p>

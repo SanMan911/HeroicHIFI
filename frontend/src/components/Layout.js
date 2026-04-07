@@ -25,7 +25,7 @@ export function Header() {
   const isActive = (path) => location.pathname === path;
 
   return (
-    <header className="fixed top-0 w-full z-50 glass-header bg-gradient-to-r from-[#F2FAF4]/90 to-[#EAF2FB]/90 border-b border-[#28A9E2]/10" data-testid="main-header">
+    <header className="fixed top-0 w-full z-50 glass-header bg-gradient-to-r from-[#C8F2CE]/80 via-[#A7D9E8]/80 to-[#91C8E7]/80 border-b border-[#91C8E7]/30" data-testid="main-header">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           <Link to="/" className="flex items-center gap-3 shrink-0" data-testid="header-logo-link">
@@ -105,7 +105,7 @@ export function Header() {
       </div>
 
       {mobileOpen && (
-        <div className="lg:hidden bg-gradient-to-r from-[#F2FAF4]/98 to-[#EAF2FB]/98 backdrop-blur-xl border-t border-[#28A9E2]/10 py-4 px-4" data-testid="mobile-menu">
+        <div className="lg:hidden bg-gradient-to-r from-[#C8F2CE]/95 via-[#A7D9E8]/95 to-[#91C8E7]/95 backdrop-blur-xl border-t border-[#91C8E7]/20 py-4 px-4" data-testid="mobile-menu">
           {navLinks.map((link) => (
             <Link
               key={link.to}
@@ -204,7 +204,7 @@ export function Footer() {
 
 export default function Layout({ children }) {
   return (
-    <div className="min-h-screen flex flex-col bg-[#F5F9FC]">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#E4F5E7] via-[#D6EBF2] to-[#CBE4F3]">
       <Header />
       <main className="flex-1 pt-16 sm:pt-20">
         {children}

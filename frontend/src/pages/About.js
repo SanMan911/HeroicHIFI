@@ -40,7 +40,7 @@ export default function About() {
       </section>
 
       {/* Vision */}
-      <section className="py-20 bg-[#EBF3F9]" data-testid="vision-section">
+      <section className="py-20 bg-gradient-to-r from-[#C8F2CE]/30 via-[#A7D9E8]/30 to-[#91C8E7]/30" data-testid="vision-section">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#1E56A0]/10 flex items-center justify-center mx-auto mb-6">
             <Eye className="w-8 h-8 text-[#1E56A0]" />
