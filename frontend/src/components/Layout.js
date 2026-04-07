@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { MEDIA, ORG_INFO } from "../data/missions";
-import { Menu, X, Globe, Mail, Phone, MapPin } from "lucide-react";
+import { Menu, X, Globe, Mail, Phone, MapPin, Users } from "lucide-react";
 import { Button } from "../components/ui/button";
 
 export function Header() {
@@ -67,6 +67,12 @@ export function Header() {
 
             {user ? (
               <>
+                <Link to="/community">
+                  <Button variant="ghost" size="sm" className="text-sm hidden sm:inline-flex gap-1" data-testid="nav-community">
+                    <Users className="w-4 h-4" />
+                    {lang === "hi" ? "समुदाय" : "Community"}
+                  </Button>
+                </Link>
                 <Link to="/dashboard">
                   <Button variant="ghost" size="sm" className="text-sm hidden sm:inline-flex" data-testid="nav-dashboard">
                     {t.dashboard}
@@ -120,6 +126,10 @@ export function Header() {
           ))}
           {user ? (
             <>
+              <Link to="/community" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 py-3 px-4 text-sm text-slate-600" data-testid="mobile-nav-community">
+                <Users className="w-4 h-4" />
+                {lang === "hi" ? "समुदाय" : "Community"}
+              </Link>
               <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-slate-600">{t.dashboard}</Link>
               <button onClick={() => { logout(); setMobileOpen(false); }} className="block py-3 px-4 text-sm text-slate-600 w-full text-left">{t.logout}</button>
             </>

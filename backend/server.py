@@ -59,7 +59,11 @@ def strip_numbers(text: str) -> str:
         return text
     result = re.sub(r'\d+', '[*]', text)
     for word in NUMBER_WORDS:
-        pattern = re.compile(re.escape(word), re.IGNORECASE)
+        escaped = re.escape(word)
+        if word.isascii():
+            pattern = re.compile(r'\b' + escaped + r'\b', re.IGNORECASE)
+        else:
+            pattern = re.compile(escaped, re.IGNORECASE)
         result = pattern.sub('[*]', result)
     return result
 
@@ -519,7 +523,7 @@ def generate_80g_pdf(donation: dict) -> bytes:
     c.setFont("Helvetica", 8)
     c.setFillColor(dark)
     c.drawString(35*mm, y, "Authorised Signatory")
-    c.drawRightString(w - 35*mm, y, f"Email: hhf.hifi@proton.me | Phone: (+91) 7970976881")
+    c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 7970976881")
 
     c.save()
     buf.seek(0)

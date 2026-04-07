@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { motion } from "framer-motion";
-import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog } from "lucide-react";
+import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_COLORS = {
@@ -226,6 +226,9 @@ export default function Dashboard() {
   const [volunteers, setVolunteers] = useState([]);
   const [queries, setQueries] = useState([]);
   const [users, setUsers] = useState([]);
+  const [messageThreads, setMessageThreads] = useState([]);
+  const [activeAdminThread, setActiveAdminThread] = useState(null);
+  const [adminThreadMsgs, setAdminThreadMsgs] = useState([]);
   const [fetching, setFetching] = useState(true);
 
   const isAdmin = user?.role === "admin";
@@ -234,18 +237,20 @@ export default function Dashboard() {
     if (!isAdmin) { setFetching(false); return; }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/donations"),
         api.get("/admin/volunteers"),
         api.get("/admin/queries"),
         api.get("/admin/users"),
+        api.get("/admin/messages"),
       ]);
       setStats(statsRes.data);
       setDonations(donRes.data);
       setVolunteers(volRes.data);
       setQueries(qRes.data);
       setUsers(usersRes.data);
+      setMessageThreads(msgsRes.data);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -271,6 +276,16 @@ export default function Dashboard() {
       await api.delete(`/admin/users/${encodeURIComponent(email)}`);
       toast.success(`User ${email} deleted`);
       fetchData();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    }
+  };
+
+  const loadAdminThread = async (email1, email2, senderName, recipientName) => {
+    try {
+      const { data } = await api.get(`/admin/messages/thread/${encodeURIComponent(email1)}/${encodeURIComponent(email2)}`);
+      setAdminThreadMsgs(data);
+      setActiveAdminThread({ email1, email2, senderName, recipientName });
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     }
@@ -310,6 +325,7 @@ export default function Dashboard() {
     { id: "donations", label: "Donations", icon: IndianRupee, count: donations.length },
     { id: "volunteers", label: "Volunteers", icon: Users, count: volunteers.length },
     { id: "queries", label: "Queries", icon: MessageSquare, count: queries.length },
+    { id: "messages", label: "Messages", icon: MessageCircle, count: messageThreads.length },
     { id: "users", label: "Users", icon: UserCog, count: users.length },
   ];
 
@@ -377,6 +393,70 @@ export default function Dashboard() {
 
           {/* Queries Tab */}
           {activeTab === "queries" && <QueriesTab queries={queries} onStatusChange={handleStatusChange} />}
+
+          {/* Messages Tab */}
+          {activeTab === "messages" && (
+            <div data-testid="admin-messages-list">
+              {activeAdminThread ? (
+                <div>
+                  <button
+                    onClick={() => setActiveAdminThread(null)}
+                    className="flex items-center gap-2 text-sm text-[#1E56A0] hover:text-[#174A8A] mb-4 transition-colors"
+                    data-testid="admin-thread-back"
+                  >
+                    <Eye className="w-4 h-4" /> Back to all threads
+                  </button>
+                  <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-4 mb-4">
+                    <p className="text-sm font-medium text-[#0D2847]">
+                      {activeAdminThread.senderName} &harr; {activeAdminThread.recipientName}
+                    </p>
+                    <p className="text-xs text-slate-400">{activeAdminThread.email1} &middot; {activeAdminThread.email2}</p>
+                  </div>
+                  <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                    {adminThreadMsgs.map((m) => (
+                      <div key={m.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`admin-msg-${m.id}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-medium text-[#1E56A0]">{m.sender_name || m.sender_email}</p>
+                          <p className="text-[10px] text-slate-400">{new Date(m.created_at).toLocaleString("en-IN")}</p>
+                        </div>
+                        <p className="text-sm text-[#0D2847] whitespace-pre-wrap break-words">{m.message}</p>
+                        <p className="text-[10px] text-slate-400 mt-1">To: {m.recipient_name || m.recipient_email}</p>
+                      </div>
+                    ))}
+                    {adminThreadMsgs.length === 0 && <p className="text-center text-slate-400 py-8">No messages in this thread.</p>}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {messageThreads.length === 0 ? <p className="text-center text-slate-400 py-12">No message threads yet.</p> :
+                    messageThreads.map((t, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => loadAdminThread(t.sender_email, t.recipient_email, t.sender, t.recipient)}
+                        className="bg-white rounded-xl border border-sky-100 shadow-sm p-4 flex items-center justify-between cursor-pointer hover:shadow-md transition-shadow"
+                        data-testid={`admin-thread-${idx}`}
+                      >
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-[#28A9E2]/10 flex items-center justify-center shrink-0">
+                            <MessageCircle className="w-4 h-4 text-[#28A9E2]" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-[#0D2847] truncate">{t.sender} &harr; {t.recipient}</p>
+                            <p className="text-xs text-slate-400 truncate">{t.last_message?.slice(0, 60) || "..."}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-[10px] text-slate-400">{new Date(t.last_time).toLocaleDateString("en-IN")}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#28A9E2] text-white">{t.count}</span>
+                          <Eye className="w-4 h-4 text-slate-300" />
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Users Tab */}
           {activeTab === "users" && (

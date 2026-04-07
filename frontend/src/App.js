@@ -12,6 +12,7 @@ import Volunteer from "./pages/Volunteer";
 import Contact from "./pages/Contact";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Community from "./pages/Community";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -32,6 +33,7 @@ function App() {
                   <Route path="/donate" element={<Donate />} />
                   <Route path="/volunteer" element={<Volunteer />} />
                   <Route path="/contact" element={<Contact />} />
+                  <Route path="/community" element={<Community />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                 </Routes>
               </Layout>
