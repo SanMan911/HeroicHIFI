@@ -22,7 +22,7 @@ function HeroSection() {
       <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
         <motion.p
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-          className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-amber-300 mb-6"
+          className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#FF7F00] mb-6"
         >
           {t.overline}
         </motion.p>
@@ -44,7 +44,7 @@ function HeroSection() {
           className="flex flex-col sm:flex-row gap-4 justify-center"
         >
           <Link to="/donate">
-            <Button className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-full px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200" data-testid="hero-donate-btn">
+            <Button className="bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full px-8 py-3 text-base font-medium shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200" data-testid="hero-donate-btn">
               {t.cta_donate}
             </Button>
           </Link>
@@ -82,8 +82,8 @@ function MissionsGrid() {
     <section className="py-20 sm:py-28" data-testid="missions-grid-section">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <p className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#EA580C] mb-3">{t.missions_subtitle}</p>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-[#1C1917]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <p className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#FF7F00] mb-3">{t.missions_subtitle}</p>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
             {t.missions_title}
           </h2>
         </div>
@@ -136,7 +136,7 @@ function DrivesSection() {
   const t = translations[lang].home;
 
   return (
-    <section className="py-20 bg-[#F5F5F0]" data-testid="drives-section">
+    <section className="py-20 bg-[#EBF3F9]" data-testid="drives-section">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <p className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#16A34A] mb-3">{t.drives_subtitle}</p>
@@ -147,25 +147,25 @@ function DrivesSection() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <motion.div
             initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
-            className="bg-white rounded-2xl p-8 shadow-sm border border-stone-200 hover:shadow-md transition-shadow"
+            className="bg-white rounded-2xl p-8 shadow-sm border border-sky-100 hover:shadow-md transition-shadow"
             data-testid="blood-donation-card"
           >
             <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mb-6">
               <Droplets className="w-6 h-6 text-red-500" />
             </div>
-            <h3 className="text-xl sm:text-2xl font-medium text-[#1C1917] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.blood_title}</h3>
-            <p className="text-sm sm:text-base text-stone-500 leading-relaxed">{t.blood_desc}</p>
+            <h3 className="text-xl sm:text-2xl font-medium text-[#0D2847] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.blood_title}</h3>
+            <p className="text-sm sm:text-base text-slate-500 leading-relaxed">{t.blood_desc}</p>
           </motion.div>
           <motion.div
             initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
-            className="bg-white rounded-2xl p-8 shadow-sm border border-stone-200 hover:shadow-md transition-shadow"
+            className="bg-white rounded-2xl p-8 shadow-sm border border-sky-100 hover:shadow-md transition-shadow"
             data-testid="langar-card"
           >
             <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-6">
-              <ChefHat className="w-6 h-6 text-amber-600" />
+              <ChefHat className="w-6 h-6 text-[#FF7F00]" />
             </div>
-            <h3 className="text-xl sm:text-2xl font-medium text-[#1C1917] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.langar_title}</h3>
-            <p className="text-sm sm:text-base text-stone-500 leading-relaxed">{t.langar_desc}</p>
+            <h3 className="text-xl sm:text-2xl font-medium text-[#0D2847] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.langar_title}</h3>
+            <p className="text-sm sm:text-base text-slate-500 leading-relaxed">{t.langar_desc}</p>
           </motion.div>
         </div>
       </div>
@@ -182,20 +182,20 @@ function CTASection() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
         <motion.h2
           initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-          className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-[#1C1917] mb-4"
+          className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-[#0D2847] mb-4"
           style={{ fontFamily: "'Cormorant Garamond', serif" }}
         >
           {t.cta_title}
         </motion.h2>
-        <p className="text-base sm:text-lg text-stone-500 leading-relaxed mb-10">{t.cta_subtitle}</p>
+        <p className="text-base sm:text-lg text-slate-500 leading-relaxed mb-10">{t.cta_subtitle}</p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/volunteer">
-            <Button className="bg-[#1E3A8A] hover:bg-[#1E3A8A]/90 text-white rounded-full px-8 py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200" data-testid="cta-volunteer-btn">
+            <Button className="bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full px-8 py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200" data-testid="cta-volunteer-btn">
               {t.cta_volunteer}
             </Button>
           </Link>
           <Link to="/donate">
-            <Button className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-full px-8 py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200" data-testid="cta-donate-btn">
+            <Button className="bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full px-8 py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200" data-testid="cta-donate-btn">
               {t.cta_donate}
             </Button>
           </Link>

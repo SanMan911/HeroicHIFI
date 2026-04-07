@@ -18,19 +18,19 @@ export default function Dashboard() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-[#1E3A8A]/10 flex items-center justify-center">
-              <LayoutDashboard className="w-6 h-6 text-[#1E3A8A]" />
+            <div className="w-12 h-12 rounded-2xl bg-[#1E56A0]/10 flex items-center justify-center">
+              <LayoutDashboard className="w-6 h-6 text-[#1E56A0]" />
             </div>
             <div>
-              <h1 className="text-3xl sm:text-4xl font-semibold text-[#1C1917]" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="dashboard-title">
+              <h1 className="text-3xl sm:text-4xl font-semibold text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="dashboard-title">
                 {t.title}
               </h1>
               <p className="text-sm text-stone-500">{t.welcome}, {user.name || user.email}</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-8 sm:p-12 border border-stone-200 shadow-sm text-center" data-testid="dashboard-placeholder">
-            <div className="w-20 h-20 rounded-full bg-[#F5F5F0] flex items-center justify-center mx-auto mb-6">
+          <div className="bg-white rounded-2xl p-8 sm:p-12 border border-sky-100 shadow-sm text-center" data-testid="dashboard-placeholder">
+            <div className="w-20 h-20 rounded-full bg-[#EBF3F9] flex items-center justify-center mx-auto mb-6">
               <LayoutDashboard className="w-10 h-10 text-stone-300" />
             </div>
             <p className="text-base text-stone-500 leading-relaxed max-w-md mx-auto">{t.placeholder}</p>

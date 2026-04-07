@@ -48,7 +48,7 @@ export default function Login() {
     <div className="min-h-screen flex" data-testid="login-page">
       <div className="hidden lg:flex lg:w-1/2 relative">
         <img src={MEDIA.volunteers} alt="" className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-[#1E3A8A]/80" />
+        <div className="absolute inset-0 bg-[#1E56A0]/80" />
         <div className="relative z-10 flex flex-col justify-center px-16">
           <img src={MEDIA.logo} alt="Logo" className="w-20 h-auto rounded-xl mb-8" />
           <h2 className="text-4xl font-semibold text-white tracking-tight mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
@@ -64,10 +64,10 @@ export default function Login() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <img src={MEDIA.logo} alt="Logo" className="w-12 h-auto rounded-lg" />
-            <span className="text-lg font-semibold text-[#1E3A8A]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Heroic HIFI Foundation</span>
+            <span className="text-lg font-semibold text-[#1E56A0]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Heroic HIFI Foundation</span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-semibold text-[#1C1917] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="login-title">
+          <h1 className="text-3xl sm:text-4xl font-semibold text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="login-title">
             {isRegister ? t.register_title : t.title}
           </h1>
           <p className="text-sm text-stone-500 mb-8">{isRegister ? t.register_subtitle : t.subtitle}</p>
@@ -93,7 +93,7 @@ export default function Login() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#1E3A8A] hover:bg-[#1E3A8A]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+              className="w-full bg-[#1E56A0] hover:bg-[#1E56A0]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               data-testid="login-submit-btn"
             >
               {loading ? "..." : isRegister ? t.register_btn : t.login_btn}
@@ -102,7 +102,7 @@ export default function Login() {
 
           <p className="text-sm text-stone-500 mt-6 text-center">
             {isRegister ? t.login_prompt : t.register_prompt}{" "}
-            <button onClick={() => { setIsRegister(!isRegister); setError(""); }} className="text-[#1E3A8A] font-medium hover:underline" data-testid="toggle-auth-mode">
+            <button onClick={() => { setIsRegister(!isRegister); setError(""); }} className="text-[#1E56A0] font-medium hover:underline" data-testid="toggle-auth-mode">
               {isRegister ? t.login_link : t.register_link}
             </button>
           </p>

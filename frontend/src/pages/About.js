@@ -11,12 +11,12 @@ export default function About() {
   return (
     <div data-testid="about-page">
       {/* Hero */}
-      <section className="relative py-24 sm:py-32 bg-[#1E3A8A] overflow-hidden">
+      <section className="relative py-24 sm:py-32 bg-[#1E56A0]">
         <div className="absolute inset-0 opacity-10">
           <img src={MEDIA.volunteers} alt="" className="w-full h-full object-cover" />
         </div>
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 text-center">
-          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-amber-300 mb-4">
+          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#FF7F00] mb-4">
             {t.overline}
           </motion.p>
           <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
@@ -40,12 +40,12 @@ export default function About() {
       </section>
 
       {/* Vision */}
-      <section className="py-20 bg-[#F5F5F0]" data-testid="vision-section">
+      <section className="py-20 bg-[#EBF3F9]" data-testid="vision-section">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-[#1E3A8A]/10 flex items-center justify-center mx-auto mb-6">
-            <Eye className="w-8 h-8 text-[#1E3A8A]" />
+          <div className="w-16 h-16 rounded-2xl bg-[#1E56A0]/10 flex items-center justify-center mx-auto mb-6">
+            <Eye className="w-8 h-8 text-[#1E56A0]" />
           </div>
-          <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#1C1917] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#0D2847] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
             {t.vision_title}
           </h2>
           <p className="text-base sm:text-lg text-stone-600 leading-relaxed max-w-3xl mx-auto">{t.vision_text}</p>
@@ -55,36 +55,36 @@ export default function About() {
       {/* Legal Info */}
       <section className="py-20 sm:py-28" data-testid="legal-section">
         <div className="max-w-4xl mx-auto px-4 sm:px-6">
-          <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#1C1917] mb-10 text-center" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#0D2847] mb-10 text-center" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
             {t.legal_title}
           </h2>
-          <div className="bg-white rounded-2xl p-8 sm:p-10 shadow-sm border border-stone-200 space-y-6">
+          <div className="bg-white rounded-2xl p-8 sm:p-10 shadow-sm border border-sky-100 space-y-6">
             <div className="flex items-start gap-4">
-              <Building2 className="w-5 h-5 text-[#1E3A8A] mt-1 shrink-0" />
+              <Building2 className="w-5 h-5 text-[#1E56A0] mt-1 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-stone-500 mb-1">{t.cin}</p>
-                <p className="text-base font-semibold text-[#1C1917] font-mono">{ORG_INFO.cin}</p>
+                <p className="text-base font-semibold text-[#0D2847] font-mono">{ORG_INFO.cin}</p>
               </div>
             </div>
             <div className="flex items-start gap-4">
-              <MapPin className="w-5 h-5 text-[#1E3A8A] mt-1 shrink-0" />
+              <MapPin className="w-5 h-5 text-[#1E56A0] mt-1 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-stone-500 mb-1">{t.registered_address}</p>
-                <p className="text-base text-[#1C1917]">{ORG_INFO.address}</p>
+                <p className="text-base text-[#0D2847]">{ORG_INFO.address}</p>
               </div>
             </div>
             <div className="flex items-start gap-4">
-              <Mail className="w-5 h-5 text-[#1E3A8A] mt-1 shrink-0" />
+              <Mail className="w-5 h-5 text-[#1E56A0] mt-1 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-stone-500 mb-1">{t.email}</p>
-                <a href={`mailto:${ORG_INFO.email}`} className="text-base text-[#1E3A8A] hover:underline">{ORG_INFO.email}</a>
+                <a href={`mailto:${ORG_INFO.email}`} className="text-base text-[#1E56A0] hover:underline">{ORG_INFO.email}</a>
               </div>
             </div>
             <div className="flex items-start gap-4">
-              <Phone className="w-5 h-5 text-[#1E3A8A] mt-1 shrink-0" />
+              <Phone className="w-5 h-5 text-[#1E56A0] mt-1 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-stone-500 mb-1">{t.phone}</p>
-                <a href={`tel:${ORG_INFO.phone}`} className="text-base text-[#1E3A8A] hover:underline">{ORG_INFO.phone}</a>
+                <a href={`tel:${ORG_INFO.phone}`} className="text-base text-[#1E56A0] hover:underline">{ORG_INFO.phone}</a>
               </div>
             </div>
           </div>

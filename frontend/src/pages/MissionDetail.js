@@ -62,17 +62,17 @@ export default function MissionDetail() {
           </motion.p>
           <div className="flex flex-col sm:flex-row gap-4">
             <Link to="/donate">
-              <Button className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-full px-8 py-3" data-testid="mission-donate-btn">
+              <Button className="bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full px-8 py-3" data-testid="mission-donate-btn">
                 {lang === "hi" ? "इस मिशन के लिए दान करें" : "Donate to This Mission"}
               </Button>
             </Link>
             <Link to="/volunteer">
-              <Button variant="outline" className="border-[#1E3A8A] text-[#1E3A8A] hover:bg-[#1E3A8A]/5 rounded-full px-8 py-3" data-testid="mission-volunteer-btn">
+              <Button variant="outline" className="border-[#1E56A0] text-[#1E56A0] hover:bg-[#1E56A0]/5 rounded-full px-8 py-3" data-testid="mission-volunteer-btn">
                 {lang === "hi" ? "स्वयंसेवक बनें" : "Volunteer for This Mission"}
               </Button>
             </Link>
             <Link to={`/contact?mission=${slug}`}>
-              <Button variant="outline" className="border-stone-300 text-stone-600 hover:bg-stone-50 rounded-full px-8 py-3" data-testid="mission-query-btn">
+              <Button variant="outline" className="border-sky-200 text-slate-600 hover:bg-sky-50 rounded-full px-8 py-3" data-testid="mission-query-btn">
                 {lang === "hi" ? "प्रश्न पूछें" : "Ask a Query"}
               </Button>
             </Link>

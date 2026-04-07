@@ -44,7 +44,7 @@ export default function Contact() {
 
   return (
     <div data-testid="contact-page">
-      <section className="relative py-24 sm:py-32 bg-[#1C1917]">
+      <section className="relative py-24 sm:py-32 bg-[#0D2847]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-6">
             <MessageSquare className="w-8 h-8 text-white" />
@@ -107,7 +107,7 @@ export default function Contact() {
                 <Button
                   type="submit"
                   disabled={submitting}
-                  className="w-full bg-[#1C1917] hover:bg-[#1C1917]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                  className="w-full bg-[#0D2847] hover:bg-[#0D2847]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                   data-testid="contact-submit-btn"
                 >
                   {submitting ? (lang === "hi" ? "भेज रहे हैं..." : "Sending...") : t.submit}
@@ -116,26 +116,26 @@ export default function Contact() {
             </div>
 
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl p-8 border border-stone-200 shadow-sm sticky top-28">
-                <h3 className="text-xl font-medium text-[#1C1917] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+              <div className="bg-white rounded-2xl p-8 border border-sky-100 shadow-sm sticky top-28">
+                <h3 className="text-xl font-medium text-[#0D2847] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                   {t.info_title}
                 </h3>
                 <div className="space-y-5">
-                  <a href={`mailto:${ORG_INFO.email}`} className="flex items-center gap-3 text-sm text-stone-600 hover:text-[#1E3A8A] transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-[#1E3A8A]/5 flex items-center justify-center shrink-0">
-                      <Mail className="w-4 h-4 text-[#1E3A8A]" />
+                  <a href={`mailto:${ORG_INFO.email}`} className="flex items-center gap-3 text-sm text-stone-600 hover:text-[#1E56A0] transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-[#1E56A0]/5 flex items-center justify-center shrink-0">
+                      <Mail className="w-4 h-4 text-[#1E56A0]" />
                     </div>
                     {ORG_INFO.email}
                   </a>
-                  <a href={`tel:${ORG_INFO.phone}`} className="flex items-center gap-3 text-sm text-stone-600 hover:text-[#1E3A8A] transition-colors">
-                    <div className="w-10 h-10 rounded-xl bg-[#1E3A8A]/5 flex items-center justify-center shrink-0">
-                      <Phone className="w-4 h-4 text-[#1E3A8A]" />
+                  <a href={`tel:${ORG_INFO.phone}`} className="flex items-center gap-3 text-sm text-stone-600 hover:text-[#1E56A0] transition-colors">
+                    <div className="w-10 h-10 rounded-xl bg-[#1E56A0]/5 flex items-center justify-center shrink-0">
+                      <Phone className="w-4 h-4 text-[#1E56A0]" />
                     </div>
                     {ORG_INFO.phone}
                   </a>
                   <div className="flex items-start gap-3 text-sm text-stone-600">
-                    <div className="w-10 h-10 rounded-xl bg-[#1E3A8A]/5 flex items-center justify-center shrink-0 mt-0.5">
-                      <MapPin className="w-4 h-4 text-[#1E3A8A]" />
+                    <div className="w-10 h-10 rounded-xl bg-[#1E56A0]/5 flex items-center justify-center shrink-0 mt-0.5">
+                      <MapPin className="w-4 h-4 text-[#1E56A0]" />
                     </div>
                     {ORG_INFO.address}
                   </div>

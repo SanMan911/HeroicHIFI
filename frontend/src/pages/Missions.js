@@ -13,10 +13,10 @@ export default function Missions() {
 
   return (
     <div data-testid="missions-page">
-      <section className="relative py-24 sm:py-32 bg-[#1E3A8A]">
+      <section className="relative py-24 sm:py-32 bg-[#1E56A0]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
           <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-amber-300 mb-4"
+            className="text-xs sm:text-sm uppercase tracking-[0.2em] font-semibold text-[#FF7F00] mb-4"
           >
             {t.home.missions_subtitle}
           </motion.p>
@@ -43,7 +43,7 @@ export default function Missions() {
                   transition={{ duration: 0.4, delay: i * 0.06 }}
                 >
                   <Link to={`/missions/${mission.slug}`} className="group block" data-testid={`mission-link-${mission.slug}`}>
-                    <div className="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                    <div className="bg-white rounded-2xl overflow-hidden border border-sky-100 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
                       <div className="relative h-52 overflow-hidden">
                         <img src={mission.image} alt={mission.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                         <div className="absolute top-4 left-4">
@@ -53,11 +53,11 @@ export default function Missions() {
                         </div>
                       </div>
                       <div className="p-6">
-                        <h3 className="text-xl sm:text-2xl font-medium text-[#1C1917] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                        <h3 className="text-xl sm:text-2xl font-medium text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                           {lang === "hi" ? mission.name_hi : mission.name}
                         </h3>
                         <p className="text-sm text-stone-500 mb-4">{lang === "hi" ? mission.tagline_hi : mission.tagline}</p>
-                        <span className="inline-flex items-center gap-1 text-sm font-medium text-[#1E3A8A] group-hover:gap-2 transition-all">
+                        <span className="inline-flex items-center gap-1 text-sm font-medium text-[#1E56A0] group-hover:gap-2 transition-all">
                           {lang === "hi" ? "और जानें" : "Learn More"} <ArrowRight className="w-4 h-4" />
                         </span>
                       </div>

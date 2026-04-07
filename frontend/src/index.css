@@ -6,31 +6,31 @@
 
 @layer base {
   :root {
-    --background: 40 20% 98%;
-    --foreground: 20 14% 10%;
+    --background: 204 40% 98%;
+    --foreground: 212 60% 16%;
     --card: 0 0% 100%;
-    --card-foreground: 20 14% 10%;
+    --card-foreground: 212 60% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 20 14% 10%;
-    --primary: 222 74% 33%;
+    --popover-foreground: 212 60% 16%;
+    --primary: 212 68% 37%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 20 91% 48%;
+    --secondary: 30 100% 50%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 40 20% 95%;
-    --muted-foreground: 25 10% 33%;
-    --accent: 142 72% 29%;
+    --muted: 204 30% 94%;
+    --muted-foreground: 210 20% 40%;
+    --accent: 196 80% 52%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 30 10% 90%;
-    --input: 30 10% 90%;
-    --ring: 222 74% 33%;
+    --border: 204 20% 88%;
+    --input: 204 20% 88%;
+    --ring: 212 68% 37%;
     --radius: 1rem;
-    --chart-1: 20 91% 48%;
-    --chart-2: 142 72% 29%;
-    --chart-3: 222 74% 33%;
-    --chart-4: 330 65% 50%;
-    --chart-5: 190 70% 40%;
+    --chart-1: 30 100% 50%;
+    --chart-2: 196 80% 52%;
+    --chart-3: 212 68% 37%;
+    --chart-4: 150 50% 45%;
+    --chart-5: 0 70% 55%;
   }
 }
 
@@ -84,6 +84,6 @@ html {
 }
 
 ::selection {
-  background-color: #1E3A8A;
+  background-color: #1E56A0;
   color: white;
 }

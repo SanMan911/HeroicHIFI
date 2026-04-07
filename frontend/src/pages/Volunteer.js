@@ -53,7 +53,7 @@ export default function Volunteer() {
       <section className="relative py-24 sm:py-32 overflow-hidden">
         <div className="absolute inset-0">
           <img src={MEDIA.volunteers} alt="" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#1E3A8A]/85 via-[#1E3A8A]/70 to-[#1E3A8A]/85" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#1E56A0]/85 via-[#1E56A0]/70 to-[#1E56A0]/85" />
         </div>
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-6">
@@ -95,7 +95,7 @@ export default function Volunteer() {
               <Label className="text-sm font-medium text-stone-700 mb-3 block">{t.interests}</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {MISSIONS_CLIENT.map((m) => (
-                  <label key={m.slug} className="flex items-center gap-3 p-3 rounded-xl border border-stone-200 hover:bg-stone-50 cursor-pointer transition-colors" data-testid={`volunteer-interest-${m.slug}`}>
+                  <label key={m.slug} className="flex items-center gap-3 p-3 rounded-xl border border-sky-100 hover:bg-stone-50 cursor-pointer transition-colors" data-testid={`volunteer-interest-${m.slug}`}>
                     <Checkbox
                       checked={form.interests.includes(m.slug)}
                       onCheckedChange={() => toggleInterest(m.slug)}
@@ -103,11 +103,11 @@ export default function Volunteer() {
                     <span className="text-sm text-stone-700">{lang === "hi" ? m.name_hi : m.name}</span>
                   </label>
                 ))}
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-stone-200 hover:bg-stone-50 cursor-pointer transition-colors" data-testid="volunteer-interest-blood">
+                <label className="flex items-center gap-3 p-3 rounded-xl border border-sky-100 hover:bg-stone-50 cursor-pointer transition-colors" data-testid="volunteer-interest-blood">
                   <Checkbox checked={form.interests.includes("blood-donation")} onCheckedChange={() => toggleInterest("blood-donation")} />
                   <span className="text-sm text-stone-700">{lang === "hi" ? "रक्तदान अभियान" : "Blood Donation Drives"}</span>
                 </label>
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-stone-200 hover:bg-stone-50 cursor-pointer transition-colors" data-testid="volunteer-interest-langar">
+                <label className="flex items-center gap-3 p-3 rounded-xl border border-sky-100 hover:bg-stone-50 cursor-pointer transition-colors" data-testid="volunteer-interest-langar">
                   <Checkbox checked={form.interests.includes("langar")} onCheckedChange={() => toggleInterest("langar")} />
                   <span className="text-sm text-stone-700">{lang === "hi" ? "सामुदायिक भोजन (लंगर)" : "Community Kitchen (Langar)"}</span>
                 </label>
@@ -122,7 +122,7 @@ export default function Volunteer() {
             <Button
               type="submit"
               disabled={submitting}
-              className="w-full bg-[#1E3A8A] hover:bg-[#1E3A8A]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+              className="w-full bg-[#1E56A0] hover:bg-[#1E56A0]/90 text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               data-testid="volunteer-submit-btn"
             >
               {submitting ? (lang === "hi" ? "कृपया प्रतीक्षा करें..." : "Submitting...") : t.submit}

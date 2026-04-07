@@ -42,7 +42,7 @@ export default function Donate() {
 
   return (
     <div data-testid="donate-page">
-      <section className="relative py-24 sm:py-32 bg-[#EA580C]">
+      <section className="relative py-24 sm:py-32 bg-gradient-to-br from-[#1E56A0] to-[#28A9E2]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-6">
             <Heart className="w-8 h-8 text-white" />
@@ -53,7 +53,7 @@ export default function Donate() {
           >
             {t.title}
           </motion.h1>
-          <p className="text-base sm:text-lg text-orange-100 max-w-2xl mx-auto">{t.subtitle}</p>
+          <p className="text-base sm:text-lg text-blue-100 max-w-2xl mx-auto">{t.subtitle}</p>
         </div>
       </section>
 
@@ -90,8 +90,8 @@ export default function Donate() {
                     onClick={() => selectAmount(amt)}
                     className={`py-3 px-4 rounded-xl text-sm font-medium border transition-all ${
                       form.amount === String(amt) && !customAmount
-                        ? "bg-[#1E3A8A] text-white border-[#1E3A8A]"
-                        : "bg-white text-stone-700 border-stone-200 hover:border-[#1E3A8A]/30"
+                        ? "bg-[#1E56A0] text-white border-[#1E56A0]"
+                        : "bg-white text-stone-700 border-sky-100 hover:border-[#1E56A0]/30"
                     }`}
                     data-testid={`donate-amount-${amt}`}
                   >
@@ -102,7 +102,7 @@ export default function Donate() {
                   type="button"
                   onClick={() => { setCustomAmount(true); setForm({ ...form, amount: "" }); }}
                   className={`py-3 px-4 rounded-xl text-sm font-medium border transition-all ${
-                    customAmount ? "bg-[#1E3A8A] text-white border-[#1E3A8A]" : "bg-white text-stone-700 border-stone-200 hover:border-[#1E3A8A]/30"
+                    customAmount ? "bg-[#1E56A0] text-white border-[#1E56A0]" : "bg-white text-stone-700 border-sky-100 hover:border-[#1E56A0]/30"
                   }`}
                   data-testid="donate-custom-amount-btn"
                 >
@@ -128,7 +128,7 @@ export default function Donate() {
             <Button
               type="submit"
               disabled={submitting}
-              className="w-full bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+              className="w-full bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full py-3 text-base font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
               data-testid="donate-submit-btn"
             >
               {submitting ? (lang === "hi" ? "कृपया प्रतीक्षा करें..." : "Processing...") : t.submit}

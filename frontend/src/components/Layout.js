@@ -25,7 +25,7 @@ export function Header() {
   const isActive = (path) => location.pathname === path;
 
   return (
-    <header className="fixed top-0 w-full z-50 glass-header bg-white/80 border-b border-stone-200/40" data-testid="main-header">
+    <header className="fixed top-0 w-full z-50 glass-header bg-gradient-to-r from-[#F2FAF4]/90 to-[#EAF2FB]/90 border-b border-[#28A9E2]/10" data-testid="main-header">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20">
           <Link to="/" className="flex items-center gap-3 shrink-0" data-testid="header-logo-link">
@@ -45,8 +45,8 @@ export function Header() {
                 to={link.to}
                 className={`px-3 py-2 rounded-full text-sm font-medium transition-colors duration-200 ${
                   isActive(link.to)
-                    ? "bg-[#1E3A8A]/10 text-[#1E3A8A]"
-                    : "text-stone-600 hover:text-[#1E3A8A] hover:bg-stone-100"
+                    ? "bg-[#28A9E2]/10 text-[#1E56A0]"
+                    : "text-slate-600 hover:text-[#1E56A0] hover:bg-[#28A9E2]/5"
                 }`}
                 data-testid={`nav-${link.to.replace("/", "") || "home"}`}
               >
@@ -58,7 +58,7 @@ export function Header() {
           <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={toggle}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-stone-200 text-stone-600 hover:bg-stone-100 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-[#28A9E2]/20 text-[#1E56A0] hover:bg-[#28A9E2]/5 transition-colors"
               data-testid="language-toggle"
             >
               <Globe className="w-3.5 h-3.5" />
@@ -86,7 +86,7 @@ export function Header() {
 
             <Link to="/donate">
               <Button
-                className="bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-full px-4 sm:px-6 py-2 text-sm font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                className="bg-[#FF7F00] hover:bg-[#E06B00] text-white rounded-full px-4 sm:px-6 py-2 text-sm font-medium shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 data-testid="nav-donate-cta"
               >
                 {t.donate_now}
@@ -94,7 +94,7 @@ export function Header() {
             </Link>
 
             <button
-              className="lg:hidden p-2 text-stone-600"
+              className="lg:hidden p-2 text-[#1E56A0]"
               onClick={() => setMobileOpen(!mobileOpen)}
               data-testid="mobile-menu-toggle"
             >
@@ -105,14 +105,14 @@ export function Header() {
       </div>
 
       {mobileOpen && (
-        <div className="lg:hidden bg-white/95 backdrop-blur-xl border-t border-stone-100 py-4 px-4" data-testid="mobile-menu">
+        <div className="lg:hidden bg-gradient-to-r from-[#F2FAF4]/98 to-[#EAF2FB]/98 backdrop-blur-xl border-t border-[#28A9E2]/10 py-4 px-4" data-testid="mobile-menu">
           {navLinks.map((link) => (
             <Link
               key={link.to}
               to={link.to}
               onClick={() => setMobileOpen(false)}
               className={`block py-3 px-4 rounded-xl text-sm font-medium ${
-                isActive(link.to) ? "bg-[#1E3A8A]/10 text-[#1E3A8A]" : "text-stone-600"
+                isActive(link.to) ? "bg-[#28A9E2]/10 text-[#1E56A0]" : "text-slate-600"
               }`}
             >
               {link.label}
@@ -120,11 +120,11 @@ export function Header() {
           ))}
           {user ? (
             <>
-              <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-stone-600">{t.dashboard}</Link>
-              <button onClick={() => { logout(); setMobileOpen(false); }} className="block py-3 px-4 text-sm text-stone-600 w-full text-left">{t.logout}</button>
+              <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-slate-600">{t.dashboard}</Link>
+              <button onClick={() => { logout(); setMobileOpen(false); }} className="block py-3 px-4 text-sm text-slate-600 w-full text-left">{t.logout}</button>
             </>
           ) : (
-            <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-stone-600">{t.login}</Link>
+            <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-slate-600">{t.login}</Link>
           )}
         </div>
       )}
@@ -138,7 +138,7 @@ export function Footer() {
   const tNav = translations[lang].nav;
 
   return (
-    <footer className="bg-[#1C1917] text-stone-300 mt-auto" data-testid="main-footer">
+    <footer className="bg-[#0D2847] text-blue-100/70 mt-auto" data-testid="main-footer">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
           <div className="lg:col-span-1">
@@ -148,10 +148,10 @@ export function Footer() {
                 <span className="text-white font-semibold text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                   HEROIC HIFI
                 </span>
-                <span className="block text-xs text-stone-500 tracking-widest uppercase">Foundation</span>
+                <span className="block text-xs text-[#28A9E2] tracking-widest uppercase">Foundation</span>
               </div>
             </div>
-            <p className="text-sm text-stone-400 leading-relaxed">{t.tagline}</p>
+            <p className="text-sm text-blue-200/60 leading-relaxed">{t.tagline}</p>
           </div>
 
           <div>
@@ -164,7 +164,7 @@ export function Footer() {
                 { to: "/volunteer", label: tNav.volunteer },
                 { to: "/contact", label: tNav.contact },
               ].map((l) => (
-                <Link key={l.to} to={l.to} className="block text-sm text-stone-400 hover:text-white transition-colors">{l.label}</Link>
+                <Link key={l.to} to={l.to} className="block text-sm text-blue-200/60 hover:text-[#28A9E2] transition-colors">{l.label}</Link>
               ))}
             </div>
           </div>
@@ -172,13 +172,13 @@ export function Footer() {
           <div>
             <h4 className="text-white font-semibold mb-4 text-sm tracking-wider uppercase">{t.connect}</h4>
             <div className="space-y-3">
-              <a href={`mailto:${ORG_INFO.email}`} className="flex items-center gap-2 text-sm text-stone-400 hover:text-white transition-colors">
+              <a href={`mailto:${ORG_INFO.email}`} className="flex items-center gap-2 text-sm text-blue-200/60 hover:text-[#28A9E2] transition-colors">
                 <Mail className="w-4 h-4" /> {ORG_INFO.email}
               </a>
-              <a href={`tel:${ORG_INFO.phone}`} className="flex items-center gap-2 text-sm text-stone-400 hover:text-white transition-colors">
+              <a href={`tel:${ORG_INFO.phone}`} className="flex items-center gap-2 text-sm text-blue-200/60 hover:text-[#28A9E2] transition-colors">
                 <Phone className="w-4 h-4" /> {ORG_INFO.phone}
               </a>
-              <div className="flex items-start gap-2 text-sm text-stone-400">
+              <div className="flex items-start gap-2 text-sm text-blue-200/60">
                 <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>{ORG_INFO.address}</span>
               </div>
@@ -187,14 +187,14 @@ export function Footer() {
 
           <div>
             <h4 className="text-white font-semibold mb-4 text-sm tracking-wider uppercase">{t.legal}</h4>
-            <div className="space-y-2 text-sm text-stone-400">
-              <p><span className="text-stone-500">{t.cin}:</span> {ORG_INFO.cin}</p>
+            <div className="space-y-2 text-sm text-blue-200/60">
+              <p><span className="text-blue-300/50">{t.cin}:</span> {ORG_INFO.cin}</p>
               <p>{t.section8}</p>
             </div>
           </div>
         </div>
 
-        <div className="border-t border-stone-800 mt-12 pt-8 text-center text-sm text-stone-500">
+        <div className="border-t border-blue-900/40 mt-12 pt-8 text-center text-sm text-blue-300/40">
           &copy; {new Date().getFullYear()} {ORG_INFO.name}. {t.rights}
         </div>
       </div>
@@ -204,7 +204,7 @@ export function Footer() {
 
 export default function Layout({ children }) {
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAFAF8]">
+    <div className="min-h-screen flex flex-col bg-[#F5F9FC]">
       <Header />
       <main className="flex-1 pt-16 sm:pt-20">
         {children}
