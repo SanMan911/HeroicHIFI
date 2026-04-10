@@ -32,6 +32,10 @@ services:
         value: "*"
       - key: FRONTEND_URL
         sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
       - key: PYTHON_VERSION
         value: "3.11.0"
 

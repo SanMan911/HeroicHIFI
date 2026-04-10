@@ -27,7 +27,19 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => { setForm({ ...form, [e.target.name]: e.target.value }); setError(""); };
+  const handleChange = (e) => {
+    const updated = { ...form, [e.target.name]: e.target.value };
+    if (e.target.name === "dob" && e.target.value) {
+      const birth = new Date(e.target.value);
+      const today = new Date();
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+      updated.age = age > 0 ? String(age) : "";
+    }
+    setForm(updated);
+    setError("");
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -37,7 +49,7 @@ export default function Login() {
       toast.success(t.login_success);
       navigate("/dashboard");
     } catch (err) {
-      const msg = formatApiError(err.response?.data?.detail);
+      const msg = formatApiError(err.response?.data?.detail, err);
       setError(msg); toast.error(msg);
     } finally { setLoading(false); }
   };
@@ -54,7 +66,7 @@ export default function Login() {
       if (data.otp_debug) setOtpDebug(data.otp_debug);
       setRegStep(2);
     } catch (err) {
-      const msg = formatApiError(err.response?.data?.detail);
+      const msg = formatApiError(err.response?.data?.detail, err);
       setError(msg); toast.error(msg);
     } finally { setLoading(false); }
   };
@@ -73,7 +85,7 @@ export default function Login() {
       toast.success(t.account_created);
       window.location.href = "/dashboard";
     } catch (err) {
-      const msg = formatApiError(err.response?.data?.detail);
+      const msg = formatApiError(err.response?.data?.detail, err);
       setError(msg); toast.error(msg);
     } finally { setLoading(false); }
   };
@@ -149,19 +161,19 @@ export default function Login() {
                   <Label className="text-sm font-medium text-slate-700">{t.password} *</Label>
                   <Input name="password" type="password" value={form.password} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-password-input" required />
                 </div>
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">{t.phone} *</Label>
+                  <Input name="phone" value={form.phone} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-phone-input" required />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-sm font-medium text-slate-700">{t.phone} *</Label>
-                    <Input name="phone" value={form.phone} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-phone-input" required />
+                    <Label className="text-sm font-medium text-slate-700">{t.dob}</Label>
+                    <Input name="dob" type="date" value={form.dob} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-dob-input" />
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-slate-700">{t.age}</Label>
-                    <Input name="age" type="number" value={form.age} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-age-input" />
+                    <Input name="age" type="number" value={form.age} readOnly className="mt-1 rounded-xl bg-slate-50" data-testid="register-age-input" placeholder={lang === "hi" ? "DOB से ऑटो" : "Auto from DOB"} />
                   </div>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-slate-700">{t.dob}</Label>
-                  <Input name="dob" type="date" value={form.dob} onChange={handleChange} className="mt-1 rounded-xl" data-testid="register-dob-input" />
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-slate-700">{t.address}</Label>

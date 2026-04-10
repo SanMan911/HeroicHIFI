@@ -26,8 +26,12 @@ api.interceptors.response.use(
   }
 );
 
-export function formatApiError(detail) {
-  if (detail == null) return "Something went wrong. Please try again.";
+export function formatApiError(detail, err) {
+  if (detail == null) {
+    if (err?.message?.includes("Network Error")) return "Cannot connect to server. Please check your internet connection.";
+    if (err?.code === "ERR_NETWORK") return "Cannot reach the server. It may be starting up — please try again in 30 seconds.";
+    return "Something went wrong. Please try again.";
+  }
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail))
     return detail.map((e) => (e?.msg ? e.msg : JSON.stringify(e))).join(" ");
