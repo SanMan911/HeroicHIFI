@@ -161,6 +161,7 @@ class RegisterInput(BaseModel):
     pan_number: str
     aadhaar_number: str
     otp_token: str
+    role: str = "member"
 
 class LoginInput(BaseModel):
     email: str
@@ -227,6 +228,18 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+
+class RoleChangeRequest(BaseModel):
+    requested_role: str
+    reason: str = ""
+
+class DriveInput(BaseModel):
+    title: str
+    description: str
+    date: str
+    location: str
+    drive_type: str = "upcoming"
+    image_url: Optional[str] = None
 
 # ── Object Storage ──
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
@@ -377,14 +390,15 @@ async def register(data: RegisterInput, request: Request):
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    chosen_role = data.role if data.role in ("volunteer", "member") else "member"
     doc = {
         "name": data.name, "email": email,
         "password_hash": hash_password(data.password),
         "phone": data.phone, "age": data.age, "dob": data.dob,
         "address": data.address, "pan_number": data.pan_number,
         "aadhaar_number": data.aadhaar_number,
-        "role": "volunteer", "email_verified": True,
-        "volunteer_hours": 0, "badges": ["Helping Hero"],
+        "role": chosen_role, "email_verified": True,
+        "volunteer_hours": 0, "badges": ["Helping Hero"] if chosen_role == "volunteer" else [],
         "profile_pic_path": "", "status": "active",
         "merchandise_issued": False, "admin_comments": "",
         "suspended_until": None, "suspension_reason": "",
@@ -394,8 +408,8 @@ async def register(data: RegisterInput, request: Request):
     user_id = str(result.inserted_id)
     token = create_access_token(user_id, email)
     await db.otp_tokens.delete_many({"email": email, "purpose": "registration"})
-    await log_activity("user_registered", "user", user_id, email, f"New user: {data.name}", request.client.host if request.client else "")
-    return {"token": token, "user": {"id": user_id, "name": data.name, "email": email, "role": "volunteer", "phone": data.phone, "pan_number": data.pan_number, "aadhaar_number": data.aadhaar_number, "address": data.address, "age": data.age, "dob": data.dob, "volunteer_hours": 0, "badges": ["Helping Hero"], "profile_pic_path": "", "status": "active"}}
+    await log_activity("user_registered", "user", user_id, email, f"New user: {data.name}, role: {chosen_role}", request.client.host if request.client else "")
+    return {"token": token, "user": {"id": user_id, "name": data.name, "email": email, "role": chosen_role, "phone": data.phone, "pan_number": data.pan_number, "aadhaar_number": data.aadhaar_number, "address": data.address, "age": data.age, "dob": data.dob, "volunteer_hours": 0, "badges": ["Helping Hero"] if chosen_role == "volunteer" else [], "profile_pic_path": "", "status": "active"}}
 
 @api_router.post("/auth/login")
 async def login(data: LoginInput, request: Request):
@@ -662,18 +676,25 @@ async def download_80g_certificate(donation_id: str):
         headers={"Content-Disposition": f"attachment; filename=HHF_80G_{donation_id[:8]}.pdf"}
     )
 
-# ── Volunteers Routes ──
+# ── Volunteers Routes (legacy — now merges into users) ──
 @api_router.post("/volunteers")
 async def register_volunteer(data: VolunteerInput, request: Request):
+    email = data.email.lower().strip()
+    existing_user = await db.users.find_one({"email": email})
+    if existing_user:
+        if existing_user.get("role") != "volunteer":
+            await db.users.update_one({"email": email}, {"$set": {"role": "volunteer"}})
+            await log_activity("role_upgraded", "user", "", email, "Upgraded to volunteer via form", request.client.host if request.client else "")
+        return {"message": "Your account has been updated to volunteer status.", "volunteer": {"email": email, "status": "approved"}}
     doc = {
-        "id": str(uuid.uuid4()), "name": data.name, "email": data.email.lower().strip(),
+        "id": str(uuid.uuid4()), "name": data.name, "email": email,
         "phone": data.phone, "city": data.city, "interests": data.interests,
         "message": data.message, "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.volunteers.insert_one(doc)
     doc.pop("_id", None)
-    await log_activity("volunteer_registered", "volunteer", doc["id"], data.email, f"City: {data.city}", request.client.host if request.client else "")
+    await log_activity("volunteer_registered", "volunteer", doc["id"], email, f"City: {data.city}", request.client.host if request.client else "")
     return {"message": "Thank you for registering as a volunteer! We will get back to you shortly.", "volunteer": doc}
 
 # ── Queries Routes ──
@@ -1052,6 +1073,9 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
         raise HTTPException(status_code=404, detail="User not found")
     updates = {}
     if data.role is not None:
+        if data.role == "admin" or target.get("role") == "admin":
+            if admin.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="Only admins can grant or revoke admin role")
         updates["role"] = data.role
     if data.volunteer_hours is not None:
         updates["volunteer_hours"] = data.volunteer_hours
@@ -1104,19 +1128,24 @@ async def admin_stats(user: dict = Depends(require_admin)):
     agg = await db.donations.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
     total_amount = agg[0]["total"] if agg else 0
     confirmed = await db.donations.count_documents({"status": "confirmed"})
-    total_vol = await db.volunteers.count_documents({})
-    approved_vol = await db.volunteers.count_documents({"status": "approved"})
+    total_vol = await db.users.count_documents({"role": "volunteer"})
+    total_members = await db.users.count_documents({"role": "member"})
     total_q = await db.queries.count_documents({})
     open_q = await db.queries.count_documents({"status": "open"})
     total_users = await db.users.count_documents({})
     total_tickets = await db.tickets.count_documents({})
     open_tickets = await db.tickets.count_documents({"status": "open"})
+    pending_role_requests = await db.role_requests.count_documents({"status": "pending"})
+    total_drives = await db.drives.count_documents({})
     return {
         "donations": {"total": total_donations, "confirmed": confirmed, "total_amount": total_amount},
-        "volunteers": {"total": total_vol, "approved": approved_vol},
+        "volunteers": {"total": total_vol},
+        "members": {"total": total_members},
         "queries": {"total": total_q, "open": open_q},
         "users": {"total": total_users},
         "tickets": {"total": total_tickets, "open": open_tickets},
+        "role_requests": {"pending": pending_role_requests},
+        "drives": {"total": total_drives},
     }
 
 # ── Wall of Fame ──
@@ -1173,6 +1202,99 @@ async def update_wall_entry(user_email: str, data: dict, admin: dict = Depends(r
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not on the Wall of Fame")
     return {"message": "Wall of Fame entry updated"}
+
+# ── Role Change Requests ──
+@api_router.post("/role-requests")
+async def request_role_change(data: RoleChangeRequest, request: Request, user: dict = Depends(get_current_user)):
+    if data.requested_role not in ("volunteer", "member"):
+        raise HTTPException(status_code=400, detail="Invalid role. Choose 'volunteer' or 'member'.")
+    if user.get("role") == data.requested_role:
+        raise HTTPException(status_code=400, detail=f"You are already a {data.requested_role}.")
+    existing = await db.role_requests.find_one({"email": user["email"], "status": "pending"})
+    if existing:
+        raise HTTPException(status_code=400, detail="You already have a pending role change request.")
+    doc = {
+        "id": str(uuid.uuid4()), "email": user["email"], "name": user.get("name", ""),
+        "current_role": user.get("role", "member"), "requested_role": data.requested_role,
+        "reason": data.reason, "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.role_requests.insert_one(doc)
+    doc.pop("_id", None)
+    await log_activity("role_change_requested", "user", user["email"], user["email"], f"{user.get('role')} -> {data.requested_role}", request.client.host if request.client else "")
+    return {"message": "Role change request submitted. An admin will review it.", "request": doc}
+
+@api_router.get("/role-requests/mine")
+async def my_role_requests(user: dict = Depends(get_current_user)):
+    reqs = await db.role_requests.find({"email": user["email"]}, {"_id": 0}).sort("created_at", -1).to_list(10)
+    return reqs
+
+@api_router.get("/admin/role-requests")
+async def admin_list_role_requests(admin: dict = Depends(require_admin)):
+    return await db.role_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+@api_router.put("/admin/role-requests/{request_id}/approve")
+async def admin_approve_role_request(request_id: str, admin: dict = Depends(require_admin), request: Request = None):
+    req = await db.role_requests.find_one({"id": request_id, "status": "pending"})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    await db.users.update_one({"email": req["email"]}, {"$set": {"role": req["requested_role"]}})
+    await db.role_requests.update_one({"id": request_id}, {"$set": {"status": "approved", "reviewed_by": admin["email"], "reviewed_at": datetime.now(timezone.utc).isoformat()}})
+    await log_activity("role_change_approved", "user", req["email"], admin["email"], f"{req['current_role']} -> {req['requested_role']}", "")
+    return {"message": f"Role change approved. {req['name']} is now a {req['requested_role']}."}
+
+@api_router.put("/admin/role-requests/{request_id}/reject")
+async def admin_reject_role_request(request_id: str, admin: dict = Depends(require_admin), request: Request = None):
+    req = await db.role_requests.find_one({"id": request_id, "status": "pending"})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    await db.role_requests.update_one({"id": request_id}, {"$set": {"status": "rejected", "reviewed_by": admin["email"], "reviewed_at": datetime.now(timezone.utc).isoformat()}})
+    await log_activity("role_change_rejected", "user", req["email"], admin["email"], f"Rejected: {req['current_role']} -> {req['requested_role']}", "")
+    return {"message": "Role change request rejected."}
+
+# ── Drives (Past & Upcoming) ──
+@api_router.get("/drives")
+async def list_drives():
+    drives = await db.drives.find({}, {"_id": 0}).sort("date", -1).to_list(200)
+    return drives
+
+@api_router.post("/admin/drives")
+async def create_drive(data: DriveInput, admin: dict = Depends(require_admin), request: Request = None):
+    doc = {
+        "id": str(uuid.uuid4()), "title": data.title, "description": data.description,
+        "date": data.date, "location": data.location, "drive_type": data.drive_type,
+        "image_url": data.image_url or "", "created_by": admin["email"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.drives.insert_one(doc)
+    doc.pop("_id", None)
+    await log_activity("drive_created", "drive", doc["id"], admin["email"], f"{data.drive_type}: {data.title}", "")
+    return {"message": "Drive created successfully.", "drive": doc}
+
+@api_router.put("/admin/drives/{drive_id}")
+async def update_drive(drive_id: str, data: DriveInput, admin: dict = Depends(require_admin)):
+    updates = {"title": data.title, "description": data.description, "date": data.date, "location": data.location, "drive_type": data.drive_type}
+    if data.image_url is not None:
+        updates["image_url"] = data.image_url
+    result = await db.drives.update_one({"id": drive_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Drive not found")
+    await log_activity("drive_updated", "drive", drive_id, admin["email"], f"Updated: {data.title}", "")
+    return {"message": "Drive updated."}
+
+@api_router.delete("/admin/drives/{drive_id}")
+async def delete_drive(drive_id: str, admin: dict = Depends(require_admin)):
+    result = await db.drives.delete_one({"id": drive_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Drive not found")
+    await log_activity("drive_deleted", "drive", drive_id, admin["email"], "Drive deleted", "")
+    return {"message": "Drive deleted."}
+
+# ── Admin Activity Log ──
+@api_router.get("/admin/activity-logs")
+async def admin_activity_logs(limit: int = 100, admin: dict = Depends(require_admin)):
+    logs = await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    return logs
 
 # ── Health ──
 @api_router.get("/health")

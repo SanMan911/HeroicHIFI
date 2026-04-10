@@ -20,7 +20,7 @@ export default function Login() {
   const tHero = translations[lang].hero;
   const [isRegister, setIsRegister] = useState(false);
   const [regStep, setRegStep] = useState(1);
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", age: "", dob: "", address: "", pan_number: "", aadhaar_number: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", age: "", dob: "", address: "", pan_number: "", aadhaar_number: "", role: "member" });
   const [otp, setOtp] = useState("");
   const [otpToken, setOtpToken] = useState("");
   const [otpDebug, setOtpDebug] = useState(null);
@@ -187,6 +187,23 @@ export default function Login() {
                   <div>
                     <Label className="text-sm font-medium text-slate-700">{t.aadhaar_label} *</Label>
                     <Input name="aadhaar_number" value={form.aadhaar_number} onChange={handleChange} placeholder="1234 5678 9012" className="mt-1 rounded-xl" data-testid="register-aadhaar-input" required />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-slate-700">{lang === "hi" ? "मैं पंजीकरण कर रहा/रही हूँ:" : "I am registering as:"} *</Label>
+                  <div className="flex gap-3 mt-2">
+                    <button type="button" onClick={() => setForm({ ...form, role: "member" })}
+                      className={`flex-1 p-3 rounded-xl border-2 text-center transition-all ${form.role === "member" ? "border-[#1E56A0] bg-[#1E56A0]/5" : "border-sky-100 hover:border-sky-200"}`}
+                      data-testid="role-member-btn">
+                      <p className="text-sm font-medium text-[#0D2847]">{lang === "hi" ? "सदस्य" : "Member"}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{lang === "hi" ? "अपडेट और दान" : "Updates & donations"}</p>
+                    </button>
+                    <button type="button" onClick={() => setForm({ ...form, role: "volunteer" })}
+                      className={`flex-1 p-3 rounded-xl border-2 text-center transition-all ${form.role === "volunteer" ? "border-[#1E56A0] bg-[#1E56A0]/5" : "border-sky-100 hover:border-sky-200"}`}
+                      data-testid="role-volunteer-btn">
+                      <p className="text-sm font-medium text-[#0D2847]">{lang === "hi" ? "स्वयंसेवक" : "Volunteer"}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{lang === "hi" ? "सक्रिय भागीदारी" : "Active participation"}</p>
+                    </button>
                   </div>
                 </div>
                 <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex gap-2 items-start">
