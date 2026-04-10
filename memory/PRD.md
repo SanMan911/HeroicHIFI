@@ -1,39 +1,61 @@
-# Heroic HIFI Foundation - PRD
+# Heroic HIFI Foundation — PRD
 
-## Architecture
-- **Frontend**: React 19 + Tailwind CSS + Shadcn UI + Framer Motion
-- **Backend**: FastAPI + MongoDB + ReportLab (PDF) + Resend (email, LIVE) + Emergent Object Storage
-- **Auth**: JWT + bcrypt + Email OTP verification + Password Reset
-- **Payments**: Razorpay (env-gated, placeholder keys)
+## Original Problem Statement
+Build a website for "Heroic HIFI Foundation", a Section 8 Non-Profit Organization in India. Features: donations with PAN/80G receipts, OTP-based registration, volunteer onboarding, community messaging (number-stripped), Hindi/English manual translations, volunteer badges, user profiles with avatar upload, Wall of Fame, grievance tickets, password reset via email, and deployment configs for self-hosting.
 
-## Implemented (April 2026)
-- [x] 10+ page website with logo-matched green-blue gradient theme
-- [x] Email OTP verification (Resend, LIVE via noreply@heroichifi.org)
-- [x] Expanded registration: Name, Email, Password, Phone, Age, DOB, Address, PAN, Aadhaar
-- [x] 80G Provisional Certificate PDF (50% rebate, auto-generated)
-- [x] PAN mandatory for donations; Aadhaar linked
-- [x] Logged-in users get pre-filled donation forms (skip OTP)
-- [x] Admin Dashboard: Overview, Donations, Volunteers, Queries, Messages, Tickets, Users (7 tabs)
-- [x] Admin: status management, 80G certificate download, user deletion
-- [x] Activity logging (all site actions to MongoDB)
-- [x] Razorpay integration code (order + verify, env-gated)
-- [x] English + Hindi bilingual (all pages, persisted to localStorage)
-- [x] Community Directory + Messaging with number stripping (EN/HI)
-- [x] Admin Messages tab: unredacted thread viewing
-- [x] Badge System: auto (Helping Hero, Century Hero, Generous Soul, Community Builder) + admin (Star Volunteer Month/Quarter/Year, Top Donor, Rising Star)
-- [x] Profile Page: DP upload, hours, total donated, badges, edit profile
-- [x] Admin User Management: promote/demote, suspend/unsuspend, merchandise tracking, comments, badge assign/remove
-- [x] Grievance Ticket System: create/view/respond/manage status
-- [x] Password Reset: email-based with secure tokens (30min expiry)
-- [x] Special/Custom Drives: Birthday at old-age homes, Memorial donations, Seasonal aid
-- [x] **Wall of Fame**: beautiful dark-themed public page honouring distinguished members, admin toggle from Dashboard
-- [x] Resend API LIVE with verified domain heroichifi.org
+## Tech Stack
+- Frontend: React.js (CRA + Craco + Tailwind + Shadcn/UI)
+- Backend: FastAPI + Motor (async MongoDB)
+- DB: MongoDB
+- Email: Resend (`noreply@heroichifi.org`)
+- Payments: Razorpay (placeholder keys)
+- Storage: Emergent Object Storage (avatars)
+- Deployment: Render (render.yaml), Vercel (vercel.json), Railway (railway.toml)
 
-## API Keys Status
-- **Resend**: LIVE (re_C4DoEz3H_..., sender: noreply@heroichifi.org)
-- **Razorpay**: Placeholder (awaiting live keys)
+## Core User Roles
+- **Admin** — Full control. Only admins can assign/revoke admin role.
+- **Volunteer** — Active participant. Gets badges, merchandise, volunteer-specific emails.
+- **Member** — Supporter. Gets subscription updates and donation access.
 
-## Backlog
-### P2: Aadhaar-PAN linking verification via 3rd-party API
-### P3: Recurring monthly donation subscriptions
-### P4: Go-Live: Replace placeholder Razorpay keys with live credentials
+## Implemented Features (as of Apr 2026)
+1. OTP-based registration with role selection (volunteer/member)
+2. Login + JWT auth + password reset via email
+3. Razorpay donation flow + 80G PDF certificates
+4. Community messaging (phone numbers stripped)
+5. Volunteer badge/achievement system
+6. User profiles with avatar upload
+7. Wall of Fame (admin-managed)
+8. Grievance ticket system
+9. Manual Hindi/English translations
+10. WhatsApp floating chat button
+11. Special Drives UI (birthdays, memorabilia)
+12. **Unified Roster** — single user collection with role-based filtering
+13. **Role Change Requests** — users request upgrade/downgrade, admin approves
+14. **Drives Management** — CRUD for past & upcoming drives
+15. **Activity Logging** — all admin actions logged with timestamps
+16. **Age auto-calculation** from DOB
+17. Deployment configs: Render (render.yaml), Vercel (vercel.json), Railway
+
+## Deployment Status
+- Render: Deployed (both backend + frontend)
+- Vercel: Frontend deployed (connected to Render backend)
+- Custom domain: heroichifi.org (DNS configured for Vercel)
+
+## Prioritized Backlog
+- P1: Refactor server.py (1200+ lines) into modular routes/models
+- P2: Aadhaar-PAN linkage verification via 3rd-party API (Sandbox.co.in)
+- P3: Recurring monthly donation subscriptions
+- P4: Go-Live with real Razorpay keys
+
+## Key API Endpoints
+- POST /api/auth/register-init, /api/auth/verify-otp, /api/auth/register
+- POST /api/auth/send-reset-link, /api/auth/reset-password
+- POST /api/role-requests, GET /api/role-requests/mine
+- GET /api/admin/role-requests, PUT /api/admin/role-requests/{id}/approve|reject
+- GET /api/drives, POST /api/admin/drives, DELETE /api/admin/drives/{id}
+- GET /api/admin/activity-logs
+- GET /api/admin/stats (includes role counts, drives, role requests)
+- POST /api/donations, GET /api/donations/{id}/certificate
+
+## DB Collections
+- users, donations, volunteers, queries, tickets, messages, wall_of_fame, otp_tokens, role_requests, drives, activity_logs
