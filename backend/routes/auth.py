@@ -68,6 +68,7 @@ async def register(data: RegisterInput, request: Request):
         "aadhaar_number": data.aadhaar_number,
         "role": chosen_role, "email_verified": True,
         "volunteer_hours": 0, "badges": ["Helping Hero"] if chosen_role == "volunteer" else [],
+        "specializations": data.specializations if chosen_role == "volunteer" else [],
         "profile_pic_path": "", "status": "active",
         "merchandise_issued": False, "admin_comments": "",
         "suspended_until": None, "suspension_reason": "",

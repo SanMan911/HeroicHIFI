@@ -23,6 +23,7 @@ class RegisterInput(BaseModel):
     aadhaar_number: str
     otp_token: str
     role: str = "member"
+    specializations: List[str] = []
 
 class LoginInput(BaseModel):
     email: str
@@ -101,7 +102,29 @@ class DriveInput(BaseModel):
     location: str
     drive_type: str = "upcoming"
     image_url: Optional[str] = None
+    mission_slug: Optional[str] = None
+    estimated_days: int = 1
+    time: Optional[str] = None
 
 class MessageInput(BaseModel):
     recipient_email: str
     message: str
+
+class EmailBlastInput(BaseModel):
+    subject: str
+    body: str
+    target: str = "all"
+
+class EventReportInput(BaseModel):
+    drive_id: str
+    time_spent: str
+    resources_spent: str
+    summary: str
+    issues: str
+    outcome: str
+    admin_rating: int = 5
+    attendance: List[str] = []
+
+class AdminPromotionRequest(BaseModel):
+    target_email: str
+    reason: str = ""

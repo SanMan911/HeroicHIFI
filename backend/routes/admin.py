@@ -3,9 +3,14 @@ import uuid
 from datetime import datetime, timezone
 
 from config import db
-from models.schemas import StatusUpdate, AdminUserUpdate, BadgeAction, TicketResponse, DriveInput
-from utils.auth import require_admin
+from models.schemas import (
+    StatusUpdate, AdminUserUpdate, BadgeAction, TicketResponse, DriveInput,
+    EmailBlastInput, EventReportInput, AdminPromotionRequest
+)
+from utils.auth import require_admin, get_current_user
 from utils.activity import log_activity
+from utils.email import send_email_blast, send_notification_email
+from utils.llm import generate_event_article
 
 router = APIRouter(prefix="/api")
 
@@ -232,7 +237,9 @@ async def create_drive(data: DriveInput, admin: dict = Depends(require_admin), r
     doc = {
         "id": str(uuid.uuid4()), "title": data.title, "description": data.description,
         "date": data.date, "location": data.location, "drive_type": data.drive_type,
-        "image_url": data.image_url or "", "created_by": admin["email"],
+        "mission_slug": data.mission_slug or "", "estimated_days": data.estimated_days,
+        "time": data.time or "", "image_url": data.image_url or "",
+        "reported": False, "created_by": admin["email"],
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.drives.insert_one(doc)
@@ -318,3 +325,232 @@ async def update_wall_entry(user_email: str, data: dict, admin: dict = Depends(r
 @router.get("/admin/activity-logs")
 async def admin_activity_logs(limit: int = 100, admin: dict = Depends(require_admin)):
     return await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+
+
+# ── Email Blasts ──
+@router.post("/admin/email-blast")
+async def admin_send_email_blast(data: EmailBlastInput, admin: dict = Depends(require_admin)):
+    query = {}
+    if data.target == "volunteers":
+        query = {"role": "volunteer"}
+    elif data.target == "members":
+        query = {"role": "member"}
+    users = await db.users.find(query, {"email": 1, "_id": 0}).to_list(10000)
+    emails = [u["email"] for u in users if u.get("email")]
+    if not emails:
+        raise HTTPException(status_code=400, detail="No recipients found for the selected target.")
+    sent = await send_email_blast(data.subject, data.body, emails)
+    await log_activity("email_blast_sent", "email", "", admin["email"], f"Target: {data.target}, Recipients: {len(emails)}, Sent: {sent}, Subject: {data.subject}", "")
+    # Log blast record
+    await db.email_blasts.insert_one({
+        "id": str(uuid.uuid4()), "subject": data.subject, "body": data.body,
+        "target": data.target, "recipient_count": len(emails), "sent_count": sent,
+        "sent_by": admin["email"], "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    return {"message": f"Email blast sent to {sent}/{len(emails)} recipients.", "sent": sent, "total": len(emails)}
+
+
+@router.get("/admin/email-blasts")
+async def admin_list_email_blasts(admin: dict = Depends(require_admin)):
+    return await db.email_blasts.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+# ── Event Report & Article Generation ──
+@router.post("/admin/events/report")
+async def submit_event_report(data: EventReportInput, admin: dict = Depends(require_admin)):
+    drive = await db.drives.find_one({"id": data.drive_id})
+    if not drive:
+        raise HTTPException(status_code=404, detail="Drive not found")
+    # Get volunteer names from attendance
+    volunteer_names = []
+    for email in data.attendance:
+        u = await db.users.find_one({"email": email}, {"name": 1, "_id": 0})
+        if u:
+            volunteer_names.append(u["name"])
+    # Calculate star hero: combination of attendance + hours + admin_rating
+    star_hero_email = ""
+    star_hero_name = "the entire team"
+    if data.attendance:
+        scores = []
+        for email in data.attendance:
+            u = await db.users.find_one({"email": email})
+            if u:
+                attendance_count = await db.event_reports.count_documents({"attendance": email})
+                hours = u.get("volunteer_hours", 0)
+                score = (attendance_count + 1) * 2 + hours + data.admin_rating
+                scores.append({"email": email, "name": u.get("name", ""), "score": score})
+        if scores:
+            scores.sort(key=lambda x: x["score"], reverse=True)
+            star_hero_email = scores[0]["email"]
+            star_hero_name = scores[0]["name"]
+    # Generate AI article
+    article = await generate_event_article({
+        "title": drive.get("title", ""),
+        "mission": drive.get("mission_slug", "Community Service"),
+        "date": drive.get("date", ""),
+        "location": drive.get("location", ""),
+        "time_spent": data.time_spent,
+        "resources_spent": data.resources_spent,
+        "summary": data.summary,
+        "outcome": data.outcome,
+        "issues": data.issues,
+        "volunteer_names": volunteer_names,
+        "star_hero": star_hero_name,
+    })
+    # Save event report
+    report_doc = {
+        "id": str(uuid.uuid4()), "drive_id": data.drive_id,
+        "drive_title": drive.get("title", ""),
+        "time_spent": data.time_spent, "resources_spent": data.resources_spent,
+        "summary": data.summary, "issues": data.issues, "outcome": data.outcome,
+        "admin_rating": data.admin_rating,
+        "attendance": data.attendance, "volunteer_names": volunteer_names,
+        "star_hero_email": star_hero_email, "star_hero_name": star_hero_name,
+        "article": article, "reported_by": admin["email"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.event_reports.insert_one(report_doc)
+    report_doc.pop("_id", None)
+    # Mark drive as reported
+    await db.drives.update_one({"id": data.drive_id}, {"$set": {"drive_type": "past", "reported": True}})
+    # Update volunteer hours for attendees
+    for email in data.attendance:
+        await db.users.update_one({"email": email}, {"$inc": {"volunteer_hours": 1}})
+    # Create notifications for all tagged volunteers
+    for email in data.attendance:
+        u = await db.users.find_one({"email": email}, {"name": 1, "_id": 0})
+        notif_msg = f'You were tagged in the event report for "{drive.get("title", "")}".'
+        if email == star_hero_email:
+            notif_msg = f'Congratulations! You are the Star Hero of "{drive.get("title", "")}"!'
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()), "user_email": email,
+            "title": f"Event Report: {drive.get('title', '')}",
+            "message": notif_msg, "type": "event_report",
+            "link": f"/drives/{data.drive_id}",
+            "read": False, "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        # Also send email notification
+        try:
+            await send_notification_email(email, f"Heroic HIFI: {drive.get('title', '')}", notif_msg)
+        except Exception:
+            pass
+    # Award star hero badge
+    if star_hero_email:
+        await db.users.update_one({"email": star_hero_email}, {"$addToSet": {"badges": "Star Hero"}})
+    await log_activity("event_report_submitted", "drive", data.drive_id, admin["email"], f"Star Hero: {star_hero_name}, Attendees: {len(data.attendance)}", "")
+    return {"message": "Event report submitted and article generated!", "report": report_doc}
+
+
+@router.get("/admin/events/reports")
+async def list_event_reports(admin: dict = Depends(require_admin)):
+    return await db.event_reports.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+@router.get("/admin/events/pending")
+async def get_pending_event_reports(admin: dict = Depends(require_admin)):
+    """Get drives whose date has passed but no report has been filed."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    drives = await db.drives.find({"reported": {"$ne": True}}, {"_id": 0}).to_list(500)
+    pending = [d for d in drives if d.get("date", "9999") <= today]
+    return pending
+
+
+# ── Notifications ──
+@router.get("/notifications")
+async def get_my_notifications(user: dict = Depends(get_current_user)):
+    return await db.notifications.find({"user_email": user["email"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+
+
+@router.get("/notifications/unread-count")
+async def unread_count(user: dict = Depends(get_current_user)):
+    count = await db.notifications.count_documents({"user_email": user["email"], "read": False})
+    return {"count": count}
+
+
+@router.put("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, user: dict = Depends(get_current_user)):
+    await db.notifications.update_one({"id": notif_id, "user_email": user["email"]}, {"$set": {"read": True}})
+    return {"message": "Marked as read"}
+
+
+@router.put("/notifications/read-all")
+async def mark_all_read(user: dict = Depends(get_current_user)):
+    await db.notifications.update_many({"user_email": user["email"], "read": False}, {"$set": {"read": True}})
+    return {"message": "All notifications marked as read"}
+
+
+# ── Admin Promotion (multi-admin approval) ──
+@router.post("/admin/promote-request")
+async def request_admin_promotion(data: AdminPromotionRequest, admin: dict = Depends(require_admin)):
+    target_email = data.target_email.lower().strip()
+    target = await db.users.find_one({"email": target_email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("role") == "admin":
+        raise HTTPException(status_code=400, detail="User is already an admin")
+    existing = await db.admin_promotions.find_one({"target_email": target_email, "status": "pending"})
+    if existing:
+        raise HTTPException(status_code=400, detail="A pending promotion request already exists for this user")
+    admin_count = await db.users.count_documents({"role": "admin"})
+    required_approvals = max(1, admin_count - 1)
+    doc = {
+        "id": str(uuid.uuid4()), "target_email": target_email,
+        "target_name": target.get("name", ""),
+        "requested_by": admin["email"], "reason": data.reason,
+        "required_approvals": required_approvals,
+        "approvals": [admin["email"]],
+        "rejections": [],
+        "status": "approved" if required_approvals <= 1 else "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    if doc["status"] == "approved":
+        await db.users.update_one({"email": target_email}, {"$set": {"role": "admin"}})
+        await log_activity("admin_promoted", "user", target_email, admin["email"], "Promoted to admin (sole admin approval)", "")
+    else:
+        await log_activity("admin_promotion_requested", "user", target_email, admin["email"], f"Needs {required_approvals} approvals", "")
+    await db.admin_promotions.insert_one(doc)
+    doc.pop("_id", None)
+    return {"message": f"{'User promoted to admin.' if doc['status'] == 'approved' else f'Promotion request created. Needs {required_approvals} admin approvals.'}", "promotion": doc}
+
+
+@router.get("/admin/promote-requests")
+async def list_promotion_requests(admin: dict = Depends(require_admin)):
+    return await db.admin_promotions.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+@router.put("/admin/promote-requests/{request_id}/approve")
+async def approve_promotion(request_id: str, admin: dict = Depends(require_admin)):
+    req = await db.admin_promotions.find_one({"id": request_id, "status": "pending"})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    if admin["email"] in req.get("approvals", []):
+        raise HTTPException(status_code=400, detail="You have already approved this request")
+    approvals = req.get("approvals", []) + [admin["email"]]
+    required = req.get("required_approvals", 1)
+    if len(approvals) >= required:
+        await db.admin_promotions.update_one({"id": request_id}, {"$set": {"approvals": approvals, "status": "approved"}})
+        await db.users.update_one({"email": req["target_email"]}, {"$set": {"role": "admin"}})
+        await log_activity("admin_promoted", "user", req["target_email"], admin["email"], f"Promoted to admin ({len(approvals)}/{required} approvals)", "")
+        return {"message": f"{req['target_name']} has been promoted to admin!"}
+    else:
+        await db.admin_promotions.update_one({"id": request_id}, {"$set": {"approvals": approvals}})
+        await log_activity("admin_promotion_approved", "user", req["target_email"], admin["email"], f"Approval {len(approvals)}/{required}", "")
+        return {"message": f"Approved. {len(approvals)}/{required} approvals received."}
+
+
+@router.put("/admin/promote-requests/{request_id}/reject")
+async def reject_promotion(request_id: str, admin: dict = Depends(require_admin)):
+    req = await db.admin_promotions.find_one({"id": request_id, "status": "pending"})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    rejections = req.get("rejections", []) + [admin["email"]]
+    await db.admin_promotions.update_one({"id": request_id}, {"$set": {"rejections": rejections, "status": "rejected"}})
+    await log_activity("admin_promotion_rejected", "user", req["target_email"], admin["email"], "Promotion rejected", "")
+    return {"message": "Promotion request rejected."}
+
+
+# ── Event Articles (public) ──
+@router.get("/events/articles")
+async def list_event_articles():
+    reports = await db.event_reports.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return [{"id": r["id"], "title": r.get("drive_title", ""), "article": r.get("article", ""), "star_hero": r.get("star_hero_name", ""), "volunteer_names": r.get("volunteer_names", []), "date": r.get("created_at", "")} for r in reports]

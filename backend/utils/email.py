@@ -96,3 +96,58 @@ async def send_registration_notification(name: str, email: str, role: str):
         await asyncio.to_thread(resend.Emails.send, params)
     except Exception as e:
         logger.error(f"Registration notification error: {e}")
+
+
+async def send_email_blast(subject: str, body: str, recipients: list):
+    """Send bulk email blast to list of recipients."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key or not resend:
+        logger.info(f"[BLAST MOCK] Subject: {subject}, Recipients: {len(recipients)}")
+        return 0
+    resend.api_key = api_key
+    sent = 0
+    for email in recipients:
+        try:
+            params = {
+                "from": SENDER_EMAIL,
+                "to": [email],
+                "subject": subject,
+                "html": f"""
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+                    <h2 style="color:#1E56A0;">Heroic HIFI Foundation</h2>
+                    <div style="margin:20px 0;line-height:1.6;">{body}</div>
+                    <hr style="border:none;border-top:1px solid #E0E0E0;margin:20px 0;">
+                    <p style="color:#999;font-size:11px;">You received this because you're a registered member of Heroic HIFI Foundation.</p>
+                </div>
+                """
+            }
+            await asyncio.to_thread(resend.Emails.send, params)
+            sent += 1
+        except Exception as e:
+            logger.error(f"Blast email error for {email}: {e}")
+    return sent
+
+
+async def send_notification_email(email: str, subject: str, message: str):
+    """Send a notification email to a single user."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key or not resend:
+        return False
+    try:
+        resend.api_key = api_key
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [email],
+            "subject": subject,
+            "html": f"""
+            <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+                <h2 style="color:#1E56A0;">Heroic HIFI Foundation</h2>
+                <p>{message}</p>
+            </div>
+            """
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True
+    except Exception as e:
+        logger.error(f"Notification email error: {e}")
+        return False

@@ -8,7 +8,7 @@ import os
 import uuid
 import time
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://volunteer-heroic.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hifi-ngo-portal.preview.emergentagent.com').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "admin@heroichifi.org"
