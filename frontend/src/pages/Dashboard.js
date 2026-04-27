@@ -109,6 +109,7 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [webhookHealth, setWebhookHealth] = useState(null);
+  const [draftRows, setDraftRows] = useState([]);
 
   const isAdmin = user?.role === "admin";
 
@@ -125,7 +126,7 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
@@ -134,6 +135,7 @@ export default function Dashboard() {
         api.get("/admin/promote-requests"), api.get("/admin/events/reports"), api.get("/notifications"),
         api.get("/admin/subscriptions"),
         api.get("/admin/webhook-health?limit=15"),
+        api.get("/admin/annual-80g/drafts"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -143,6 +145,7 @@ export default function Dashboard() {
       setEventReports(reportsRes.data); setNotifications(notifRes.data);
       setSubscriptions(subsRes.data);
       setWebhookHealth(hookRes.data);
+      setDraftRows(draftsRes.data);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -191,18 +194,28 @@ export default function Dashboard() {
   const handleRecomputePatrons = async () => { try { const { data } = await api.post("/admin/patrons/recompute"); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSimulateCharge = async (subId) => { try { const { data } = await api.post(`/admin/subscriptions/${subId}/simulate-charge`); toast.success(`Charge simulated. ${data.patron?.promoted ? "🎉 Promoted to Heroic Patron!" : `Charges: ${data.patron?.charge_count || 0}/6`}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleReplayWebhook = async (eventId) => { try { const { data } = await api.post(`/admin/webhook-events/${eventId}/replay`); toast.success(`Replayed: ${data.side_effects?.join(", ") || "no side effects"}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
-  const handleAnnual80g = async (dryRun) => {
-    const fy = window.prompt("FY start date (e.g. 2025-04-01). Leave blank to use the previous FY automatically:", "");
-    if (fy === null) return; // user cancelled
-    const params = new URLSearchParams();
-    if (fy) params.set("fy_start", fy);
-    if (dryRun) params.set("dry_run", "true");
+  const handleAnnual80g = async (action) => {
+    // action: 'preview' | 'draft'
+    const fy = window.prompt("FY start date (e.g. 2025-04-01). Leave blank for the previous FY:", "");
+    if (fy === null) return;
     try {
-      const { data } = await api.post(`/admin/annual-80g/send?${params.toString()}`);
-      const verb = dryRun ? "Preview" : "Dispatched";
-      toast.success(`${verb} FY ${data.fy_label}: ${data.sent} sent, ${data.skipped_already_sent} already sent, ${data.skipped_no_pan} skipped (no PAN), ${data.failed} failed.`);
+      if (action === "preview") {
+        const params = new URLSearchParams();
+        if (fy) params.set("fy_start", fy);
+        params.set("dry_run", "true");
+        const { data } = await api.post(`/admin/annual-80g/send?${params.toString()}`);
+        toast.success(`Preview FY ${data.fy_label}: ${data.donors_total} donors, ${data.skipped_no_pan} without PAN.`);
+      } else {
+        const params = new URLSearchParams();
+        if (fy) params.set("fy_start", fy);
+        const { data } = await api.post(`/admin/annual-80g/draft?${params.toString()}`);
+        toast.success(data.message);
+        fetchData();
+      }
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   };
+  const handleApproveDraft = async (id) => { try { const { data } = await api.post(`/admin/annual-80g/drafts/${id}/approve`); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleRejectDraft = async (id) => { if (!window.confirm("Reject this dispatch draft?")) return; try { const { data } = await api.post(`/admin/annual-80g/drafts/${id}/reject`); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -487,20 +500,68 @@ export default function Dashboard() {
                       <FileText className="w-5 h-5 text-green-700" /> Annual 80G Tax Certificate Dispatch
                     </h2>
                     <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Auto-dispatched on <strong>1 April</strong> each year for the prior FY. Each donor receives a single legal 80G certificate aggregating all their donations for that FY. Per-donation emails are <em>provisional only</em>.
+                      Auto-drafted on <strong>1 April</strong> each year for the prior FY. Each donor receives a single legal 80G certificate aggregating all donations. Per-donation emails are <em>provisional only</em>.
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-2">⏰ Background daemon checks daily 1–7 April IST and dispatches automatically. Use the buttons below to preview or trigger early.</p>
+                    <p className="text-[11px] text-slate-500 mt-2">🛡️ <strong>Two-admin gate:</strong> Admin A drafts → Admin B reviews & approves → emails go out. Self-approval is blocked. The background daemon also creates a draft (no auto-send) so a human always signs off.</p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <Button onClick={() => handleAnnual80g(true)} variant="outline" className="border-green-300 text-green-700 hover:bg-green-50 rounded-xl gap-2 text-xs h-9" data-testid="annual-80g-dryrun-btn">
+                    <Button onClick={() => handleAnnual80g("preview")} variant="outline" className="border-green-300 text-green-700 hover:bg-green-50 rounded-xl gap-2 text-xs h-9" data-testid="annual-80g-preview-btn">
                       <Eye className="w-3.5 h-3.5" /> Dry-run Preview
                     </Button>
-                    <Button onClick={() => handleAnnual80g(false)} className="bg-green-700 hover:bg-green-800 text-white rounded-xl gap-2 text-xs h-9" data-testid="annual-80g-send-btn">
-                      <Mail className="w-3.5 h-3.5" /> Send Now
+                    <Button onClick={() => handleAnnual80g("draft")} className="bg-green-700 hover:bg-green-800 text-white rounded-xl gap-2 text-xs h-9" data-testid="annual-80g-draft-btn">
+                      <FileText className="w-3.5 h-3.5" /> Create Draft
                     </Button>
                   </div>
                 </div>
               </div>
+
+              {/* Pending & recent 80G drafts */}
+              {draftRows.length > 0 && (
+                <div className="bg-white rounded-2xl border border-sky-100 shadow-sm p-5 mb-6" data-testid="annual-80g-drafts">
+                  <h3 className="text-base font-semibold text-[#0D2847] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Dispatch Drafts</h3>
+                  <div className="space-y-3">
+                    {draftRows.map(d => {
+                      const isPending = d.status === "pending";
+                      const canAct = isPending && d.drafted_by !== user.email;
+                      return (
+                        <div key={d.id} className={`rounded-xl border p-4 ${isPending ? "border-amber-200 bg-amber-50/40" : d.status === "dispatched" ? "border-green-200 bg-green-50/40" : "border-slate-200 bg-slate-50/40"}`} data-testid={`draft-${d.id}`}>
+                          <div className="flex items-start justify-between flex-wrap gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-[#0D2847]">FY {d.fy_label} <span className={`ml-2 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${isPending ? "bg-amber-200 text-amber-800" : d.status === "dispatched" ? "bg-green-200 text-green-800" : d.status === "rejected" ? "bg-red-200 text-red-800" : "bg-slate-200 text-slate-700"}`}>{d.status}</span></p>
+                              <p className="text-xs text-slate-500 mt-1">
+                                Drafted by <strong>{d.drafted_by}</strong> on {new Date(d.drafted_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                              </p>
+                              <p className="text-xs text-slate-600 mt-1.5">
+                                {d.summary?.would_send || 0} donors · ₹{(d.summary?.total_amount || 0).toLocaleString("en-IN")} total
+                                {d.summary?.skipped_no_pan ? ` · ${d.summary.skipped_no_pan} skipped (no PAN)` : ""}
+                                {d.summary?.skipped_already_sent ? ` · ${d.summary.skipped_already_sent} already sent` : ""}
+                              </p>
+                              {d.approved_by && <p className="text-[11px] text-green-700 mt-1">✓ Approved by {d.approved_by} on {new Date(d.approved_at).toLocaleString("en-IN", { dateStyle: "medium" })}</p>}
+                              {d.rejected_by && <p className="text-[11px] text-red-700 mt-1">✗ Rejected by {d.rejected_by}</p>}
+                              {d.dispatch_result && <p className="text-[11px] text-slate-600 mt-1">📨 Sent: {d.dispatch_result.sent} · Failed: {d.dispatch_result.failed}</p>}
+                            </div>
+                            {canAct && (
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={() => handleApproveDraft(d.id)} className="bg-green-700 hover:bg-green-800 text-white text-xs h-8 rounded-lg gap-1" data-testid={`approve-draft-${d.id}`}>
+                                  <CheckCircle className="w-3 h-3" /> Approve & Send
+                                </Button>
+                                <Button size="sm" onClick={() => handleRejectDraft(d.id)} variant="outline" className="border-red-200 text-red-700 hover:bg-red-50 text-xs h-8 rounded-lg gap-1" data-testid={`reject-draft-${d.id}`}>
+                                  <XCircle className="w-3 h-3" /> Reject
+                                </Button>
+                              </div>
+                            )}
+                            {isPending && !canAct && (
+                              <div className="text-[11px] text-slate-500 italic max-w-[180px] text-right">
+                                You drafted this — a different admin must approve.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Webhook Health Widget */}
               {webhookHealth && (

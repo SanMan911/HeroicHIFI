@@ -311,12 +311,32 @@ async def admin_send_annual_80g(
     fy_start: str | None = None, dry_run: bool = False,
     admin: dict = Depends(require_admin),
 ):
-    """Trigger consolidated 80G certificate dispatch for a given FY.
+    """DEPRECATED in favour of the draft+approve flow. Kept for backwards compat
+    of dry-run preview; non-dry-run is rejected and redirects to /draft."""
+    if not dry_run:
+        raise HTTPException(
+            status_code=400,
+            detail="Direct dispatch is gated. Use POST /api/admin/annual-80g/draft to create a draft, "
+                   "then POST /api/admin/annual-80g/drafts/{id}/approve from a SECOND admin account.",
+        )
+    if fy_start:
+        try:
+            fs = _date.fromisoformat(fy_start)
+            fs_start, fs_end, fs_label = fy_for_date(fs)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="fy_start must be YYYY-MM-DD (e.g. 2025-04-01)")
+    else:
+        fs_start, fs_end, fs_label = previous_fy(_date.today())
+    return await send_consolidated_for_fy(fs_start, fs_end, fs_label, dry_run=True)
 
-    Query params:
-      - `fy_start` (optional): ISO date YYYY-04-01. Defaults to the previous FY's start.
-      - `dry_run` (default false): if true, only previews who *would* receive a cert.
-    """
+
+@router.post("/admin/annual-80g/draft")
+async def admin_draft_annual_80g(
+    fy_start: str | None = None,
+    admin: dict = Depends(require_admin),
+):
+    """Create a dispatch draft. A SECOND admin must approve before any emails go out.
+    Idempotent: if a pending or completed draft for the same FY exists, returns it instead."""
     if fy_start:
         try:
             fs = _date.fromisoformat(fy_start)
@@ -326,22 +346,127 @@ async def admin_send_annual_80g(
     else:
         fs_start, fs_end, fs_label = previous_fy(_date.today())
 
-    result = await send_consolidated_for_fy(fs_start, fs_end, fs_label, dry_run=dry_run)
-    if not dry_run:
-        await db.consolidated_dispatch_runs.insert_one({
-            "id": str(uuid.uuid4()),
-            "fy_label": fs_label,
-            "triggered_by": admin["email"],
-            "status": "completed",
-            "result": {k: v for k, v in result.items() if k != "details"},
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
+    existing = await db.annual_80g_drafts.find_one(
+        {"fy_label": fs_label, "status": {"$in": ["pending", "approved", "dispatched"]}},
+        {"_id": 0},
+    )
+    if existing:
+        return {"message": f"Existing draft for FY {fs_label} (status={existing['status']}).", "draft": existing}
+
+    # Compute preview to embed in draft (so reviewers see exactly what will happen)
+    preview = await send_consolidated_for_fy(fs_start, fs_end, fs_label, dry_run=True)
+    draft_id = str(uuid.uuid4())
+    draft_doc = {
+        "id": draft_id,
+        "fy_label": fs_label,
+        "fy_start": fs_start.isoformat(),
+        "fy_end": fs_end.isoformat(),
+        "drafted_by": admin["email"],
+        "drafted_at": datetime.now(timezone.utc).isoformat(),
+        "status": "pending",
+        "approved_by": None,
+        "approved_at": None,
+        "rejected_by": None,
+        "rejected_at": None,
+        "rejection_reason": None,
+        "summary": {
+            "donors_total": preview["donors_total"],
+            "would_send": len([d for d in preview["details"] if d["status"] == "dry_run"]),
+            "skipped_already_sent": preview["skipped_already_sent"],
+            "skipped_no_pan": preview["skipped_no_pan"],
+            "total_amount": sum(d.get("total", 0) for d in preview["details"] if d["status"] == "dry_run"),
+        },
+        "preview_details": preview["details"][:50],  # keep payload small
+        "dispatch_result": None,
+    }
+    await db.annual_80g_drafts.insert_one(draft_doc)
+    draft_doc.pop("_id", None)
+    await log_activity("annual_80g_drafted", "system", fs_label, admin["email"],
+                       f"donors={preview['donors_total']} would_send={draft_doc['summary']['would_send']}", "")
+    # Notify all OTHER admins by in-app notification
+    other_admins = await db.users.find({"role": "admin", "email": {"$ne": admin["email"]}}, {"_id": 0, "email": 1}).to_list(50)
+    for a in other_admins:
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()), "email": a["email"],
+            "message": f"📋 Annual 80G dispatch draft for FY {fs_label} awaits your approval ({draft_doc['summary']['would_send']} donors, ₹{draft_doc['summary']['total_amount']:,}).",
+            "category": "annual_80g_review", "is_read": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         })
-    await log_activity("annual_80g_dispatch", "system", fs_label, admin["email"],
-                       f"sent={result['sent']} skipped_already={result['skipped_already_sent']} "
-                       f"skipped_no_pan={result['skipped_no_pan']} failed={result['failed']} "
-                       f"dry_run={dry_run}", "")
-    return result
+    return {"message": f"Draft created for FY {fs_label}. {len(other_admins)} admin(s) notified for approval.", "draft": draft_doc}
+
+
+@router.get("/admin/annual-80g/drafts")
+async def admin_list_drafts(admin: dict = Depends(require_admin)):
+    return await db.annual_80g_drafts.find({}, {"_id": 0}).sort("drafted_at", -1).to_list(50)
+
+
+@router.post("/admin/annual-80g/drafts/{draft_id}/approve")
+async def admin_approve_draft(draft_id: str, admin: dict = Depends(require_admin)):
+    draft = await db.annual_80g_drafts.find_one({"id": draft_id})
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Draft is {draft['status']}, not pending")
+    if draft["drafted_by"] == admin["email"]:
+        raise HTTPException(status_code=403, detail="Approval must come from a different admin (separation-of-duties).")
+
+    fs_start = _date.fromisoformat(draft["fy_start"])
+    fs_end = _date.fromisoformat(draft["fy_end"])
+    fs_label = draft["fy_label"]
+
+    # Mark approved + dispatched in one go (race-safe upsert via status check)
+    await db.annual_80g_drafts.update_one(
+        {"id": draft_id, "status": "pending"},
+        {"$set": {
+            "status": "approved",
+            "approved_by": admin["email"],
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    # Run the actual dispatch
+    result = await send_consolidated_for_fy(fs_start, fs_end, fs_label, dry_run=False)
+    await db.annual_80g_drafts.update_one(
+        {"id": draft_id},
+        {"$set": {
+            "status": "dispatched",
+            "dispatch_result": {k: v for k, v in result.items() if k != "details"},
+            "dispatched_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    await db.consolidated_dispatch_runs.insert_one({
+        "id": str(uuid.uuid4()),
+        "fy_label": fs_label,
+        "draft_id": draft_id,
+        "drafted_by": draft["drafted_by"],
+        "approved_by": admin["email"],
+        "triggered_by": "draft_approval",
+        "status": "completed",
+        "result": {k: v for k, v in result.items() if k != "details"},
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await log_activity("annual_80g_approved_and_sent", "system", fs_label, admin["email"],
+                       f"draft={draft_id} drafted_by={draft['drafted_by']} sent={result['sent']} failed={result['failed']}", "")
+    return {"message": f"Approved and dispatched. Sent {result['sent']}, failed {result['failed']}.", "result": result}
+
+
+@router.post("/admin/annual-80g/drafts/{draft_id}/reject")
+async def admin_reject_draft(draft_id: str, admin: dict = Depends(require_admin)):
+    draft = await db.annual_80g_drafts.find_one({"id": draft_id})
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Draft is {draft['status']}, not pending")
+    if draft["drafted_by"] == admin["email"]:
+        raise HTTPException(status_code=403, detail="Reject must come from a different admin.")
+    await db.annual_80g_drafts.update_one({"id": draft_id}, {"$set": {
+        "status": "rejected",
+        "rejected_by": admin["email"],
+        "rejected_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    await log_activity("annual_80g_rejected", "system", draft["fy_label"], admin["email"],
+                       f"draft={draft_id} drafted_by={draft['drafted_by']}", "")
+    return {"message": "Draft rejected. Drafter can create a fresh draft."}
 
 
 @router.get("/admin/annual-80g/runs")

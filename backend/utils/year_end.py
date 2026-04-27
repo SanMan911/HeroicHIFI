@@ -150,33 +150,54 @@ def previous_fy(today: date) -> tuple[date, date, str]:
 
 
 async def annual_dispatch_daemon():
-    """Background task: every 12 hours, check if today (IST) is on/after 1 April
-    and the previous FY hasn't been dispatched. Idempotent at the per-donor level."""
+    """Background task: every 12 hours, check if today (IST) is in the 1-7 April
+    window and the previous FY hasn't been drafted yet. Creates a DRAFT (not a direct
+    dispatch) — a human admin must approve from the dashboard before any emails go out."""
+    import uuid as _uuid
     while True:
         try:
             now = datetime.now(IST)
             today = now.date()
-            # Trigger window: 1-7 April each year (to catch missed days after restarts)
             if today.month == 4 and today.day <= 7 and now.hour >= 1:
                 fy_start, fy_end, fy_label = previous_fy(today)
-                # Has this FY been globally dispatched (any single record exists)?
-                any_sent = await db.consolidated_certificates.find_one({"fy_label": fy_label})
-                completed = await db.consolidated_dispatch_runs.find_one({"fy_label": fy_label, "status": "completed"})
-                if not completed:
-                    logger.info(f"[ANNUAL_80G] Starting dispatch for FY {fy_label} (any_prior_sent={bool(any_sent)})")
-                    result = await send_consolidated_for_fy(fy_start, fy_end, fy_label, dry_run=False)
-                    await db.consolidated_dispatch_runs.insert_one({
-                        "id": str(uuid.uuid4()),
+                existing_draft = await db.annual_80g_drafts.find_one(
+                    {"fy_label": fy_label, "status": {"$in": ["pending", "approved", "dispatched"]}}
+                )
+                if not existing_draft:
+                    logger.info(f"[ANNUAL_80G] Daemon creating draft for FY {fy_label}")
+                    preview = await send_consolidated_for_fy(fy_start, fy_end, fy_label, dry_run=True)
+                    draft_id = str(_uuid.uuid4())
+                    draft_doc = {
+                        "id": draft_id,
                         "fy_label": fy_label,
-                        "triggered_by": "auto_daemon",
-                        "status": "completed",
-                        "result": {k: v for k, v in result.items() if k != "details"},
-                        "started_at": now.isoformat(),
-                        "finished_at": datetime.now(IST).isoformat(),
-                    })
-                    logger.info(f"[ANNUAL_80G] FY {fy_label} dispatch complete: {result['sent']} sent, "
-                                f"{result['skipped_already_sent']} skipped, {result['failed']} failed")
+                        "fy_start": fy_start.isoformat(),
+                        "fy_end": fy_end.isoformat(),
+                        "drafted_by": "system_daemon",
+                        "drafted_at": now.isoformat(),
+                        "status": "pending",
+                        "approved_by": None, "approved_at": None,
+                        "rejected_by": None, "rejected_at": None, "rejection_reason": None,
+                        "summary": {
+                            "donors_total": preview["donors_total"],
+                            "would_send": len([d for d in preview["details"] if d["status"] == "dry_run"]),
+                            "skipped_already_sent": preview["skipped_already_sent"],
+                            "skipped_no_pan": preview["skipped_no_pan"],
+                            "total_amount": sum(d.get("total", 0) for d in preview["details"] if d["status"] == "dry_run"),
+                        },
+                        "preview_details": preview["details"][:50],
+                        "dispatch_result": None,
+                    }
+                    await db.annual_80g_drafts.insert_one(draft_doc)
+                    # Notify ALL admins (including the user who set this up)
+                    admins = await db.users.find({"role": "admin"}, {"_id": 0, "email": 1}).to_list(50)
+                    for a in admins:
+                        await db.notifications.insert_one({
+                            "id": str(_uuid.uuid4()), "email": a["email"],
+                            "message": f"📋 [System] Annual 80G dispatch draft for FY {fy_label} requires admin approval ({draft_doc['summary']['would_send']} donors, ₹{draft_doc['summary']['total_amount']:,}).",
+                            "category": "annual_80g_review", "is_read": False,
+                            "created_at": now.isoformat(),
+                        })
+                    logger.info(f"[ANNUAL_80G] Draft {draft_id} created. {len(admins)} admins notified.")
         except Exception:
             logger.exception("Annual 80G daemon iteration failed")
-        # Sleep 12 hours
         await asyncio.sleep(12 * 3600)
