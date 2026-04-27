@@ -155,58 +155,69 @@ async def send_notification_email(email: str, subject: str, message: str):
 
 
 async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: str = "donation") -> bool:
-    """Email the donor their 80G PDF receipt as an attachment.
+    """Email the donor a PROVISIONAL receipt (not a tax certificate).
+    The consolidated 80G certificate is sent separately on 1 April for the prior FY.
 
     `label` distinguishes flow type in the subject line ("recurring", "donation", "replayed").
     Returns True if Resend accepted the message, False otherwise (logged and swallowed).
     """
     import base64
+    from datetime import date
+    from routes.certificates import fy_for_date
     api_key = os.environ.get("RESEND_API_KEY", "")
     email = (donation.get("email") or "").strip().lower()
     if not api_key or not resend or not email:
-        logger.info(f"[RECEIPT MOCK] would email {email} with PDF ({len(pdf_bytes)} bytes)")
+        logger.info(f"[RECEIPT MOCK] would email {email} with provisional receipt PDF ({len(pdf_bytes)} bytes)")
         return False
     try:
         resend.api_key = api_key
         amount = donation.get("amount", 0)
         donation_id = donation.get("id", "")
         donor_name = donation.get("name", "")
-        plan = donation.get("message", "") or ""
-        when = donation.get("created_at", "")[:10]
+        when_str = donation.get("created_at", "")[:10] or date.today().isoformat()
+        try:
+            d = date.fromisoformat(when_str)
+        except Exception:
+            d = date.today()
+        fy_start, fy_end, fy_label = fy_for_date(d)
+        cert_send_date = date(fy_end.year, 4, 1).strftime("%d %B %Y")
         subject = (
-            f"Your 80G Receipt — Heroic HIFI Foundation (₹{amount:,})"
+            f"Donation Acknowledgment — ₹{amount:,} (Provisional Receipt)"
             if label == "donation"
-            else f"Recurring Donation Receipt — ₹{amount:,} ({label})"
-        )
-        intro = (
-            f"Dear {donor_name or 'Donor'},<br/><br/>"
-            f"Thank you for your continued support. Your recurring contribution of "
-            f"<strong>₹{amount:,}</strong> ({plan or 'Heroic HIFI Foundation'}) on {when} "
-            f"has been received. Your 80G provisional certificate is attached to this email."
+            else f"Recurring Donation Acknowledgment — ₹{amount:,} (Provisional Receipt, {label})"
         )
         params = {
             "from": SENDER_EMAIL,
             "to": [email],
             "subject": subject,
             "html": f"""
-            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px;">
+            <div style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:20px;">
                 <h2 style="color:#1E56A0;margin:0 0 4px;">Heroic HIFI Foundation</h2>
                 <p style="color:#666;font-size:12px;margin:0 0 18px;">Section 8 Non-Profit Organization, India</p>
-                <p style="font-size:14px;line-height:1.6;">{intro}</p>
-                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:14px;margin:18px 0;">
-                    <p style="margin:0 0 4px;font-size:12px;color:#9A3412;">Receipt ID</p>
-                    <p style="margin:0;font-size:14px;font-weight:600;color:#0D2847;letter-spacing:0.05em;">{donation_id[:8].upper()}</p>
-                </div>
-                <p style="font-size:13px;color:#475569;line-height:1.6;">
-                    Save the attached PDF for your records — it is eligible for a 50% tax rebate under section 80G of the Income Tax Act, 1961.
+                <p style="font-size:14px;line-height:1.6;">
+                    Dear {donor_name or 'Donor'},<br/><br/>
+                    Thank you for your generous contribution of <strong>₹{amount:,}</strong>{f' ({label})' if label != 'donation' else ''} on {when_str}.
+                    A provisional receipt is attached to this email for your records.
                 </p>
+                <div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:12px;padding:14px;margin:18px 0;">
+                    <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#B91C1C;letter-spacing:0.05em;">
+                        ⚠ THIS IS NOT AN 80G TAX CERTIFICATE
+                    </p>
+                    <p style="margin:0;font-size:13px;color:#0D2847;line-height:1.55;">
+                        The attached provisional receipt <strong>cannot be used to claim a tax deduction</strong>.
+                        Your <strong>consolidated 80G certificate</strong> covering all donations made
+                        during <strong>FY {fy_label}</strong> (1 April {fy_start.year} – 31 March {fy_end.year})
+                        will be auto-emailed to you on or shortly after <strong>{cert_send_date}</strong>.
+                        Please use that document — and not this receipt — for your income tax filing.
+                    </p>
+                </div>
                 <p style="font-size:12px;color:#94a3b8;margin-top:24px;">
-                    With gratitude,<br/>The Heroic HIFI Team
+                    With heartfelt gratitude,<br/>The Heroic HIFI Team
                 </p>
             </div>
             """,
             "attachments": [{
-                "filename": f"HHF_80G_{donation_id[:8]}.pdf",
+                "filename": f"HHF_Acknowledgment_{donation_id[:8]}.pdf",
                 "content": base64.b64encode(pdf_bytes).decode("ascii"),
             }],
         }
@@ -214,4 +225,59 @@ async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: s
         return True
     except Exception as e:
         logger.error(f"Receipt email error for {email}: {e}")
+        return False
+
+
+async def send_consolidated_80g_email(donor: dict, pdf_bytes: bytes, fy_label: str,
+                                       fy_start, fy_end, total_amount: int, donation_count: int) -> bool:
+    """Email the donor their LEGAL 80G consolidated tax certificate for the FY.
+    Sent once a year (1 April for the prior FY)."""
+    import base64
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    email = (donor.get("email") or "").strip().lower()
+    if not api_key or not resend or not email:
+        logger.info(f"[80G MOCK] would email {email} consolidated 80G ({len(pdf_bytes)} bytes)")
+        return False
+    try:
+        resend.api_key = api_key
+        donor_name = donor.get("name", "")
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [email],
+            "subject": f"Your 80G Tax Certificate — FY {fy_label} — Heroic HIFI Foundation",
+            "html": f"""
+            <div style="font-family:Arial,sans-serif;max-width:580px;margin:0 auto;padding:20px;">
+                <h2 style="color:#1E56A0;margin:0 0 4px;">Heroic HIFI Foundation</h2>
+                <p style="color:#666;font-size:12px;margin:0 0 18px;">Section 8 Non-Profit Organization, India</p>
+                <p style="font-size:14px;line-height:1.65;">
+                    Dear {donor_name or 'Donor'},<br/><br/>
+                    Thank you for standing with us throughout <strong>FY {fy_label}</strong>.
+                    Your <strong>consolidated 80G tax certificate</strong> is attached to this email and is now ready for your income tax filing.
+                </p>
+                <div style="background:#F0FDF4;border:1.5px solid #86EFAC;border-radius:12px;padding:16px;margin:18px 0;">
+                    <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#15803D;letter-spacing:0.06em;">
+                        ✓ ELIGIBLE FOR 80G TAX DEDUCTION
+                    </p>
+                    <p style="margin:0 0 4px;font-size:13px;color:#0D2847;">Total contributions: <strong>₹{total_amount:,}</strong></p>
+                    <p style="margin:0;font-size:13px;color:#0D2847;">Number of donations: <strong>{donation_count}</strong></p>
+                    <p style="margin:8px 0 0;font-size:12px;color:#475569;">Period: 1 April {fy_start.year} – 31 March {fy_end.year}</p>
+                </div>
+                <p style="font-size:13px;color:#475569;line-height:1.6;">
+                    The attached certificate is the <strong>only document</strong> you need to claim a 50% tax deduction
+                    under Section 80G of the Income Tax Act, 1961. Please retain it with your tax records.
+                </p>
+                <p style="font-size:12px;color:#94a3b8;margin-top:24px;">
+                    With deepest gratitude,<br/>The Heroic HIFI Team
+                </p>
+            </div>
+            """,
+            "attachments": [{
+                "filename": f"HHF_80G_Certificate_FY{fy_label}.pdf",
+                "content": base64.b64encode(pdf_bytes).decode("ascii"),
+            }],
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True
+    except Exception as e:
+        logger.error(f"Consolidated 80G email error for {email}: {e}")
         return False

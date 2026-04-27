@@ -85,7 +85,9 @@ backend/
 22. Mandatory Event Report blocking modal for unreported past drives
 23. Suspend/Unsuspend with mandatory reason (audit-logged with suspended_by/at)
 24. Remove user with mandatory reason (≥5 chars) — archived in deleted_users_archive before delete
-25. **Admin Patrons tab** — list all subscriptions, Recompute button, per-sub Simulate-Charge button (for testing while plan IDs are placeholders)
+25. Admin Patrons tab — list all subscriptions, Recompute, per-sub Simulate-Charge
+26. **Provisional vs Consolidated 80G separation** — per-donation emails are clearly marked PROVISIONAL (no legal weight) with a red "NOT a tax certificate" callout; the legal **consolidated 80G certificate** is auto-emailed once a year on 1 April for the prior FY (idempotent, daemon-driven, with admin manual trigger + dry-run)
+27. **Webhook Health widget** — pass-rate chip, event log, replay button per row
 
 ## Backlog
 ### P0 — see PINNED block at top

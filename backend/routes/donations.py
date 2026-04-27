@@ -7,7 +7,7 @@ from config import db
 from models.schemas import DonationInput
 from utils.auth import get_current_user
 from utils.activity import log_activity
-from routes.certificates import generate_80g_pdf
+from routes.certificates import generate_provisional_receipt_pdf
 import io
 from fastapi.responses import StreamingResponse
 
@@ -88,7 +88,7 @@ async def download_80g_certificate(donation_id: str):
         raise HTTPException(status_code=404, detail="Donation not found")
     if not donation.get("pan_number"):
         raise HTTPException(status_code=400, detail="PAN number is required for 80G certificate")
-    pdf_bytes = generate_80g_pdf(donation)
+    pdf_bytes = generate_provisional_receipt_pdf(donation)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",

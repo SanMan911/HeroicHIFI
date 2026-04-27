@@ -191,6 +191,18 @@ export default function Dashboard() {
   const handleRecomputePatrons = async () => { try { const { data } = await api.post("/admin/patrons/recompute"); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSimulateCharge = async (subId) => { try { const { data } = await api.post(`/admin/subscriptions/${subId}/simulate-charge`); toast.success(`Charge simulated. ${data.patron?.promoted ? "🎉 Promoted to Heroic Patron!" : `Charges: ${data.patron?.charge_count || 0}/6`}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleReplayWebhook = async (eventId) => { try { const { data } = await api.post(`/admin/webhook-events/${eventId}/replay`); toast.success(`Replayed: ${data.side_effects?.join(", ") || "no side effects"}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleAnnual80g = async (dryRun) => {
+    const fy = window.prompt("FY start date (e.g. 2025-04-01). Leave blank to use the previous FY automatically:", "");
+    if (fy === null) return; // user cancelled
+    const params = new URLSearchParams();
+    if (fy) params.set("fy_start", fy);
+    if (dryRun) params.set("dry_run", "true");
+    try {
+      const { data } = await api.post(`/admin/annual-80g/send?${params.toString()}`);
+      const verb = dryRun ? "Preview" : "Dispatched";
+      toast.success(`${verb} FY ${data.fy_label}: ${data.sent} sent, ${data.skipped_already_sent} already sent, ${data.skipped_no_pan} skipped (no PAN), ${data.failed} failed.`);
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -464,6 +476,29 @@ export default function Dashboard() {
                   <Button onClick={handleRecomputePatrons} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-xl gap-2" data-testid="recompute-patrons-btn">
                     <RefreshCw className="w-4 h-4" /> Recompute
                   </Button>
+                </div>
+              </div>
+
+              {/* Annual 80G Dispatch */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl border border-green-200 shadow-sm p-6 mb-6" data-testid="annual-80g-card">
+                <div className="flex items-start justify-between flex-wrap gap-4">
+                  <div className="flex-1 min-w-[260px]">
+                    <h2 className="text-lg font-semibold text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                      <FileText className="w-5 h-5 text-green-700" /> Annual 80G Tax Certificate Dispatch
+                    </h2>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      Auto-dispatched on <strong>1 April</strong> each year for the prior FY. Each donor receives a single legal 80G certificate aggregating all their donations for that FY. Per-donation emails are <em>provisional only</em>.
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-2">⏰ Background daemon checks daily 1–7 April IST and dispatches automatically. Use the buttons below to preview or trigger early.</p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button onClick={() => handleAnnual80g(true)} variant="outline" className="border-green-300 text-green-700 hover:bg-green-50 rounded-xl gap-2 text-xs h-9" data-testid="annual-80g-dryrun-btn">
+                      <Eye className="w-3.5 h-3.5" /> Dry-run Preview
+                    </Button>
+                    <Button onClick={() => handleAnnual80g(false)} className="bg-green-700 hover:bg-green-800 text-white rounded-xl gap-2 text-xs h-9" data-testid="annual-80g-send-btn">
+                      <Mail className="w-3.5 h-3.5" /> Send Now
+                    </Button>
+                  </div>
                 </div>
               </div>
 

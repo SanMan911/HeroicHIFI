@@ -25,7 +25,7 @@ from utils.activity import log_activity
 from utils.email import send_donation_receipt_email
 from utils.razorpay_subs import create_subscription, cancel_subscription, verify_webhook_signature, PLAN_AMOUNTS
 from utils.patron import promote_if_qualified, list_patrons, recompute_all, get_patron_summary
-from routes.certificates import generate_80g_pdf
+from routes.certificates import generate_provisional_receipt_pdf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -138,7 +138,7 @@ async def subscription_webhook(request: Request):
             donation_doc.pop("_id", None)
             # Auto-email 80G receipt PDF
             try:
-                pdf_bytes = generate_80g_pdf(donation_doc)
+                pdf_bytes = generate_provisional_receipt_pdf(donation_doc)
                 sent = await send_donation_receipt_email(donation_doc, pdf_bytes, label=sub_doc["plan"])
                 await log_activity("recurring_receipt_emailed", "donation", donation_doc["id"], "system",
                                    f"to={sub_doc['email']} sent={sent} amount=₹{amount}", "")
@@ -197,7 +197,7 @@ async def admin_simulate_charge(sub_id: str, admin: dict = Depends(require_admin
     # Auto-email 80G receipt PDF (same path as production webhook)
     receipt_sent = False
     try:
-        pdf_bytes = generate_80g_pdf(donation_doc)
+        pdf_bytes = generate_provisional_receipt_pdf(donation_doc)
         receipt_sent = await send_donation_receipt_email(donation_doc, pdf_bytes, label=sub.get("plan", "recurring"))
     except Exception as e:
         logger.warning(f"Simulated receipt email failed: {e}")
@@ -282,7 +282,7 @@ async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(requir
                 side_effects.append("donation recorded")
                 # Email receipt on replay too
                 try:
-                    pdf_bytes = generate_80g_pdf(donation_doc)
+                    pdf_bytes = generate_provisional_receipt_pdf(donation_doc)
                     sent = await send_donation_receipt_email(donation_doc, pdf_bytes, label="replayed")
                     side_effects.append("receipt emailed" if sent else "receipt email failed")
                 except Exception as e:
@@ -297,3 +297,54 @@ async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(requir
     await log_activity("webhook_replayed", "webhook", event_id, admin["email"],
                        f"event={event} side_effects={'; '.join(side_effects) or 'none'}", "")
     return {"message": "Event replayed.", "event": event, "side_effects": side_effects}
+
+
+
+# ── Annual Consolidated 80G Dispatch (admin) ──
+from datetime import date as _date  # noqa: E402
+from utils.year_end import send_consolidated_for_fy, previous_fy  # noqa: E402
+from routes.certificates import fy_for_date  # noqa: E402
+
+
+@router.post("/admin/annual-80g/send")
+async def admin_send_annual_80g(
+    fy_start: str | None = None, dry_run: bool = False,
+    admin: dict = Depends(require_admin),
+):
+    """Trigger consolidated 80G certificate dispatch for a given FY.
+
+    Query params:
+      - `fy_start` (optional): ISO date YYYY-04-01. Defaults to the previous FY's start.
+      - `dry_run` (default false): if true, only previews who *would* receive a cert.
+    """
+    if fy_start:
+        try:
+            fs = _date.fromisoformat(fy_start)
+            fs_start, fs_end, fs_label = fy_for_date(fs)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="fy_start must be YYYY-MM-DD (e.g. 2025-04-01)")
+    else:
+        fs_start, fs_end, fs_label = previous_fy(_date.today())
+
+    result = await send_consolidated_for_fy(fs_start, fs_end, fs_label, dry_run=dry_run)
+    if not dry_run:
+        await db.consolidated_dispatch_runs.insert_one({
+            "id": str(uuid.uuid4()),
+            "fy_label": fs_label,
+            "triggered_by": admin["email"],
+            "status": "completed",
+            "result": {k: v for k, v in result.items() if k != "details"},
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        })
+    await log_activity("annual_80g_dispatch", "system", fs_label, admin["email"],
+                       f"sent={result['sent']} skipped_already={result['skipped_already_sent']} "
+                       f"skipped_no_pan={result['skipped_no_pan']} failed={result['failed']} "
+                       f"dry_run={dry_run}", "")
+    return result
+
+
+@router.get("/admin/annual-80g/runs")
+async def admin_list_dispatch_runs(admin: dict = Depends(require_admin)):
+    """History of every consolidated-80G dispatch (auto + manual)."""
+    return await db.consolidated_dispatch_runs.find({}, {"_id": 0}).sort("finished_at", -1).to_list(50)

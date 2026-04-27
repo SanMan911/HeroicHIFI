@@ -1,11 +1,13 @@
 from config import db, logger, client
 from utils.auth import hash_password, verify_password
 from utils.storage import init_storage
+from utils.year_end import annual_dispatch_daemon
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone
 from pathlib import Path
+import asyncio
 import os
 
 from routes.auth import router as auth_router
@@ -73,6 +75,10 @@ async def startup():
         creds_path.write_text(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n")
     except (PermissionError, OSError):
         pass
+
+    # Background daemon: annual 80G consolidated dispatch (idempotent, runs daily)
+    asyncio.create_task(annual_dispatch_daemon())
+    logger.info("Annual 80G dispatch daemon started")
 
 
 @app.on_event("shutdown")
