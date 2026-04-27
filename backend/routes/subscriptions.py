@@ -22,8 +22,10 @@ from config import db
 from models.schemas import SubscriptionInput
 from utils.auth import get_current_user, require_admin
 from utils.activity import log_activity
+from utils.email import send_donation_receipt_email
 from utils.razorpay_subs import create_subscription, cancel_subscription, verify_webhook_signature, PLAN_AMOUNTS
 from utils.patron import promote_if_qualified, list_patrons, recompute_all, get_patron_summary
+from routes.certificates import generate_80g_pdf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -123,7 +125,7 @@ async def subscription_webhook(request: Request):
         amount = (pay_entity.get("amount", 0) or 0) // 100
         sub_doc = await db.subscriptions.find_one({"razorpay_subscription_id": sub_id})
         if sub_doc:
-            await db.donations.insert_one({
+            donation_doc = {
                 "id": str(uuid.uuid4()), "name": sub_doc["name"], "email": sub_doc["email"],
                 "phone": sub_doc.get("phone", ""), "amount": amount, "pan_number": sub_doc.get("pan_number", ""),
                 "aadhaar_number": "", "address": sub_doc.get("address", ""),
@@ -131,7 +133,17 @@ async def subscription_webhook(request: Request):
                 "status": "confirmed", "razorpay_payment_id": pay_entity.get("id", ""),
                 "subscription_id": sub_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
-            })
+            }
+            await db.donations.insert_one(donation_doc)
+            donation_doc.pop("_id", None)
+            # Auto-email 80G receipt PDF
+            try:
+                pdf_bytes = generate_80g_pdf(donation_doc)
+                sent = await send_donation_receipt_email(donation_doc, pdf_bytes, label=sub_doc["plan"])
+                await log_activity("recurring_receipt_emailed", "donation", donation_doc["id"], "system",
+                                   f"to={sub_doc['email']} sent={sent} amount=₹{amount}", "")
+            except Exception as e:
+                logger.warning(f"Receipt email failed for {sub_doc['email']}: {e}")
             # Auto-promote to Heroic Patron if threshold reached
             promo = await promote_if_qualified(sub_doc["email"])
             if promo.get("promoted"):
@@ -167,7 +179,7 @@ async def admin_simulate_charge(sub_id: str, admin: dict = Depends(require_admin
     sub = await db.subscriptions.find_one({"id": sub_id})
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
-    await db.donations.insert_one({
+    donation_doc = {
         "id": str(uuid.uuid4()),
         "name": sub.get("name", ""), "email": sub.get("email", ""),
         "phone": sub.get("phone", ""), "amount": sub.get("amount", 0),
@@ -179,11 +191,20 @@ async def admin_simulate_charge(sub_id: str, admin: dict = Depends(require_admin
         "subscription_id": sub.get("razorpay_subscription_id", sub_id),
         "simulated": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+    await db.donations.insert_one(donation_doc)
+    donation_doc.pop("_id", None)
+    # Auto-email 80G receipt PDF (same path as production webhook)
+    receipt_sent = False
+    try:
+        pdf_bytes = generate_80g_pdf(donation_doc)
+        receipt_sent = await send_donation_receipt_email(donation_doc, pdf_bytes, label=sub.get("plan", "recurring"))
+    except Exception as e:
+        logger.warning(f"Simulated receipt email failed: {e}")
     promo = await promote_if_qualified(sub["email"])
     await log_activity("subscription_charge_simulated", "subscription", sub_id, admin["email"],
-                       f"email={sub['email']} amount={sub.get('amount', 0)} promoted={promo.get('promoted', False)}", "")
-    return {"message": "Charge simulated.", "patron": promo}
+                       f"email={sub['email']} amount={sub.get('amount', 0)} promoted={promo.get('promoted', False)} receipt_sent={receipt_sent}", "")
+    return {"message": "Charge simulated.", "patron": promo, "receipt_sent": receipt_sent}
 
 
 
@@ -246,7 +267,7 @@ async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(requir
             if existing_pay:
                 side_effects.append("donation already recorded — skipped duplicate")
             else:
-                await db.donations.insert_one({
+                donation_doc = {
                     "id": str(uuid.uuid4()), "name": sub_doc["name"], "email": sub_doc["email"],
                     "phone": sub_doc.get("phone", ""), "amount": amount,
                     "pan_number": sub_doc.get("pan_number", ""), "aadhaar_number": "",
@@ -255,8 +276,17 @@ async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(requir
                     "status": "confirmed", "razorpay_payment_id": pay_entity.get("id", ""),
                     "subscription_id": sub_id, "replayed": True,
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                })
+                }
+                await db.donations.insert_one(donation_doc)
+                donation_doc.pop("_id", None)
                 side_effects.append("donation recorded")
+                # Email receipt on replay too
+                try:
+                    pdf_bytes = generate_80g_pdf(donation_doc)
+                    sent = await send_donation_receipt_email(donation_doc, pdf_bytes, label="replayed")
+                    side_effects.append("receipt emailed" if sent else "receipt email failed")
+                except Exception as e:
+                    side_effects.append(f"receipt error: {e}")
             promo = await promote_if_qualified(sub_doc["email"])
             if promo.get("promoted"):
                 side_effects.append(f"heroic patron promoted (charges={promo['charge_count']})")

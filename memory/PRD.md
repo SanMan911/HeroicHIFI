@@ -11,12 +11,15 @@
 **Already activated (✅ LIVE):**
 - ✅ `RAZORPAY_KEY_ID` (`rzp_live_SiX7Z60muB4Hpg`) + `RAZORPAY_KEY_SECRET`
 - ✅ 4 Razorpay Plans: monthly (₹100), quarterly (₹275), half_yearly (₹525), annual (₹1000)
-- ✅ `RAZORPAY_WEBHOOK_SECRET` — auto-charge → donation record + Heroic Patron auto-promotion is live (verified end-to-end with real HMAC signatures)
+- ✅ `RAZORPAY_WEBHOOK_SECRET` — auto-charge → donation record + Heroic Patron auto-promotion + 80G PDF auto-emailed (verified end-to-end)
+- ✅ Production webhook URL set in Razorpay dashboard: `https://heroic-hifi-backend.onrender.com/api/subscriptions/webhook`
 
-**Webhook URL configured in Razorpay dashboard:**
-`https://hifi-ngo-portal.preview.emergentagent.com/api/subscriptions/webhook` (preview/dev)
+**How to obtain the remaining keys:**
+- Sandbox: Sign up at https://sandbox.co.in → Dashboard → API Keys
 
-⚠️ **Production frontend is at `https://www.heroichifi.org` (Vercel) but the BACKEND lives on Render at a separate `*.onrender.com` URL. Razorpay webhook URL must point to the BACKEND, not the frontend.** When user provides Render URL → update Razorpay dashboard → use `https://<render-app>.onrender.com/api/subscriptions/webhook` (or set up `api.heroichifi.org` CNAME → Render).
+**This block must remain at the top of every future PRD until all 2 items are LIVE. Action item for next agent: remind the user.**
+
+---
 
 **How to obtain the remaining keys:**
 - Sandbox: Sign up at https://sandbox.co.in → Dashboard → API Keys

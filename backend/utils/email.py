@@ -151,3 +151,67 @@ async def send_notification_email(email: str, subject: str, message: str):
     except Exception as e:
         logger.error(f"Notification email error: {e}")
         return False
+
+
+
+async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: str = "donation") -> bool:
+    """Email the donor their 80G PDF receipt as an attachment.
+
+    `label` distinguishes flow type in the subject line ("recurring", "donation", "replayed").
+    Returns True if Resend accepted the message, False otherwise (logged and swallowed).
+    """
+    import base64
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    email = (donation.get("email") or "").strip().lower()
+    if not api_key or not resend or not email:
+        logger.info(f"[RECEIPT MOCK] would email {email} with PDF ({len(pdf_bytes)} bytes)")
+        return False
+    try:
+        resend.api_key = api_key
+        amount = donation.get("amount", 0)
+        donation_id = donation.get("id", "")
+        donor_name = donation.get("name", "")
+        plan = donation.get("message", "") or ""
+        when = donation.get("created_at", "")[:10]
+        subject = (
+            f"Your 80G Receipt — Heroic HIFI Foundation (₹{amount:,})"
+            if label == "donation"
+            else f"Recurring Donation Receipt — ₹{amount:,} ({label})"
+        )
+        intro = (
+            f"Dear {donor_name or 'Donor'},<br/><br/>"
+            f"Thank you for your continued support. Your recurring contribution of "
+            f"<strong>₹{amount:,}</strong> ({plan or 'Heroic HIFI Foundation'}) on {when} "
+            f"has been received. Your 80G provisional certificate is attached to this email."
+        )
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [email],
+            "subject": subject,
+            "html": f"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px;">
+                <h2 style="color:#1E56A0;margin:0 0 4px;">Heroic HIFI Foundation</h2>
+                <p style="color:#666;font-size:12px;margin:0 0 18px;">Section 8 Non-Profit Organization, India</p>
+                <p style="font-size:14px;line-height:1.6;">{intro}</p>
+                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:14px;margin:18px 0;">
+                    <p style="margin:0 0 4px;font-size:12px;color:#9A3412;">Receipt ID</p>
+                    <p style="margin:0;font-size:14px;font-weight:600;color:#0D2847;letter-spacing:0.05em;">{donation_id[:8].upper()}</p>
+                </div>
+                <p style="font-size:13px;color:#475569;line-height:1.6;">
+                    Save the attached PDF for your records — it is eligible for a 50% tax rebate under section 80G of the Income Tax Act, 1961.
+                </p>
+                <p style="font-size:12px;color:#94a3b8;margin-top:24px;">
+                    With gratitude,<br/>The Heroic HIFI Team
+                </p>
+            </div>
+            """,
+            "attachments": [{
+                "filename": f"HHF_80G_{donation_id[:8]}.pdf",
+                "content": base64.b64encode(pdf_bytes).decode("ascii"),
+            }],
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True
+    except Exception as e:
+        logger.error(f"Receipt email error for {email}: {e}")
+        return False
