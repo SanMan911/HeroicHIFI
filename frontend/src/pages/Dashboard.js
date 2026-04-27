@@ -98,6 +98,7 @@ export default function Dashboard() {
   const [adminThreadMsgs, setAdminThreadMsgs] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [roleFilter, setRoleFilter] = useState("all");
+  const [specFilter, setSpecFilter] = useState("all");
   const [myRoleRequests, setMyRoleRequests] = useState([]);
   const [roleRequestForm, setRoleRequestForm] = useState({ requested_role: "", reason: "" });
   const [pendingEvents, setPendingEvents] = useState([]);
@@ -148,7 +149,8 @@ export default function Dashboard() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleStatusChange = async (collection, itemId, newStatus) => { try { await api.put(`/admin/${collection}/${itemId}/status`, { status: newStatus }); toast.success(`Status updated`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
-  const handleDeleteUser = async (email) => { if (!window.confirm(`Delete user "${email}"?`)) return; try { await api.delete(`/admin/users/${encodeURIComponent(email)}`); toast.success(`User deleted`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleDeleteUser = async (email, reason) => { try { await api.delete(`/admin/users/${encodeURIComponent(email)}`, { data: { reason } }); toast.success(`User removed`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleVerifyPan = async (email) => { try { const { data } = await api.post(`/admin/users/${encodeURIComponent(email)}/verify-pan`); toast.success(`PAN check (${data.mode}): ${data.status}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const loadAdminThread = async (email1, email2, senderName, recipientName) => { try { const { data } = await api.get(`/admin/messages/thread/${encodeURIComponent(email1)}/${encodeURIComponent(email2)}`); setAdminThreadMsgs(data); setActiveAdminThread({ email1, email2, senderName, recipientName }); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleAdminUpdateUser = async (email, updates) => { try { await api.put(`/admin/users/${encodeURIComponent(email)}/update`, updates); toast.success(`Updated`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleAddBadge = async (email, badge) => { try { await api.post(`/admin/users/${encodeURIComponent(email)}/badge`, { badge }); toast.success(`Badge added`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
@@ -236,7 +238,16 @@ export default function Dashboard() {
   }
 
   // ── ADMIN DASHBOARD ──
-  const filteredUsers = roleFilter === "all" ? users : users.filter(u => u.role === roleFilter);
+  const SPECIALIZATIONS = [
+    { key: "education", label: "Education" }, { key: "healthcare", label: "Healthcare" },
+    { key: "environment", label: "Environment" }, { key: "food", label: "Food Distribution" },
+    { key: "women", label: "Women Empowerment" }, { key: "animal", label: "Animal Welfare" },
+    { key: "clothing", label: "Clothing Drives" },
+  ];
+  const filteredUsers = users.filter(u =>
+    (roleFilter === "all" || u.role === roleFilter) &&
+    (specFilter === "all" || (u.specializations || []).includes(specFilter))
+  );
   const pendingRoleRequests = roleRequests.filter(r => r.status === "pending");
   const pendingPromos = promotionRequests.filter(r => r.status === "pending");
   const admins = users.filter(u => u.role === "admin");
@@ -439,11 +450,23 @@ export default function Dashboard() {
           {/* ROSTER */}
           {activeTab === "roster" && (
             <div data-testid="admin-users-list">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-xs text-slate-500">Filter:</span>
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <span className="text-xs text-slate-500 font-medium">Role:</span>
                 {["all", "admin", "volunteer", "member"].map(r => (<button key={r} onClick={() => setRoleFilter(r)} className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${roleFilter === r ? "bg-[#1E56A0] text-white border-[#1E56A0]" : "bg-white text-slate-500 border-sky-100 hover:bg-sky-50"}`} data-testid={`filter-${r}`}>{r === "all" ? `All (${users.length})` : `${r.charAt(0).toUpperCase() + r.slice(1)} (${users.filter(u => u.role === r).length})`}</button>))}
               </div>
-              <div className="space-y-3">{filteredUsers.length === 0 ? <p className="text-center text-slate-400 py-12">No users.</p> : filteredUsers.map(u => (<UserCard key={u.email} u={u} onDelete={handleDeleteUser} onUpdate={handleAdminUpdateUser} onAddBadge={handleAddBadge} onRemoveBadge={handleRemoveBadge} isOnWall={wallOfFame.some(w => w.email === u.email)} onToggleWall={handleToggleWallOfFame} />))}</div>
+              <div className="flex flex-wrap items-center gap-2 mb-4" data-testid="spec-filter-row">
+                <span className="text-xs text-slate-500 font-medium">Specialization:</span>
+                <button onClick={() => setSpecFilter("all")} className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${specFilter === "all" ? "bg-[#FF7F00] text-white border-[#FF7F00]" : "bg-white text-slate-500 border-amber-100 hover:bg-amber-50"}`} data-testid="spec-filter-all">All</button>
+                {SPECIALIZATIONS.map(s => {
+                  const cnt = users.filter(u => (u.specializations || []).includes(s.key)).length;
+                  return (
+                    <button key={s.key} onClick={() => setSpecFilter(s.key)} className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${specFilter === s.key ? "bg-[#FF7F00] text-white border-[#FF7F00]" : "bg-white text-slate-500 border-amber-100 hover:bg-amber-50"}`} data-testid={`spec-filter-${s.key}`}>
+                      {s.label} {cnt > 0 && <span className="text-[10px] opacity-70 ml-1">({cnt})</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="space-y-3">{filteredUsers.length === 0 ? <p className="text-center text-slate-400 py-12">No users matching filters.</p> : filteredUsers.map(u => (<UserCard key={u.email} u={u} onDelete={handleDeleteUser} onUpdate={handleAdminUpdateUser} onAddBadge={handleAddBadge} onRemoveBadge={handleRemoveBadge} onVerifyPan={handleVerifyPan} isOnWall={wallOfFame.some(w => w.email === u.email)} onToggleWall={handleToggleWallOfFame} />))}</div>
             </div>
           )}
 
@@ -504,32 +527,72 @@ function TicketsPanel({ tickets, onStatusChange, onRespond }) {
   return (<div className="space-y-3" data-testid="admin-tickets-list">{tickets.map(tk => (<div key={tk.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`admin-ticket-${tk.id}`}><div className="flex items-start justify-between mb-2"><div><p className="text-sm font-medium">{tk.subject}</p><p className="text-xs text-slate-400">{tk.user_name} | {new Date(tk.created_at).toLocaleDateString("en-IN")}</p></div><div className="flex items-center gap-2"><span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${tk.priority === "high" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>{tk.priority}</span><Select value={tk.status} onValueChange={val => onStatusChange(tk.id, val)}><SelectTrigger className="h-6 text-[10px] w-28 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in-progress">In Progress</SelectItem><SelectItem value="responded">Responded</SelectItem><SelectItem value="resolved">Resolved</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div></div><p className="text-xs text-slate-600 mb-2">{tk.description}</p>{tk.admin_response && <div className="bg-sky-50 border border-sky-200 rounded-lg p-2 mb-2"><p className="text-[10px] font-medium text-[#1E56A0]">Response:</p><p className="text-xs">{tk.admin_response}</p></div>}<button onClick={() => onRespond(tk.id, window.prompt("Response:"))} className="text-xs text-[#1E56A0] hover:underline">{tk.admin_response ? "Update" : "Respond"}</button></div>))}</div>);
 }
 
-function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, isOnWall, onToggleWall }) {
+function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPan, isOnWall, onToggleWall }) {
   const [expanded, setExpanded] = useState(false);
   const [hours, setHours] = useState(u.volunteer_hours || 0);
   const [comments, setComments] = useState(u.admin_comments || "");
   const [suspendReason, setSuspendReason] = useState("");
   const [suspendUntil, setSuspendUntil] = useState("");
+  const [removeReason, setRemoveReason] = useState("");
+  const [showRemove, setShowRemove] = useState(false);
   const [newBadge, setNewBadge] = useState("");
   const BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Rising Star", "Community Builder"];
+  const handleSuspend = () => {
+    if (suspendReason.trim().length < 5) { toast.error("Please enter a suspension reason (min 5 chars)"); return; }
+    if (window.confirm(`Suspend ${u.name}?\nReason: ${suspendReason}`)) {
+      onUpdate(u.email, { status: "suspended", suspension_reason: suspendReason.trim(), suspended_until: suspendUntil });
+      setSuspendReason(""); setSuspendUntil("");
+    }
+  };
+  const handleRemoveConfirm = () => {
+    if (removeReason.trim().length < 5) { toast.error("Removal reason is required (min 5 chars)"); return; }
+    onDelete(u.email, removeReason.trim());
+    setRemoveReason(""); setShowRemove(false);
+  };
   return (
     <div className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden" data-testid={`admin-user-${u.email}`}>
       <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center gap-3 min-w-0"><div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${u.status === "suspended" ? "bg-red-100" : "bg-[#1E56A0]/10"}`}><UserCog className={`w-4 h-4 ${u.status === "suspended" ? "text-red-500" : "text-[#1E56A0]"}`} /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{u.name}{u.status === "suspended" && <span className="text-xs text-red-500 ml-1">[SUSPENDED]</span>}</p><p className="text-xs text-slate-400">{u.email} {u.specializations?.length > 0 && `| ${u.specializations.join(", ")}`}</p></div></div>
+        <div className="flex items-center gap-3 min-w-0"><div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${u.status === "suspended" ? "bg-red-100" : "bg-[#1E56A0]/10"}`}><UserCog className={`w-4 h-4 ${u.status === "suspended" ? "text-red-500" : "text-[#1E56A0]"}`} /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{u.name}{u.status === "suspended" && <span className="text-xs text-red-500 ml-1">[SUSPENDED]</span>}{u.pan_verified && <span className="text-[10px] text-green-600 ml-1" title="PAN verified">✓PAN</span>}</p><p className="text-xs text-slate-400">{u.email} {u.specializations?.length > 0 && `| ${u.specializations.join(", ")}`}</p></div></div>
         <div className="flex items-center gap-2 shrink-0"><span className="text-xs text-slate-400">{u.volunteer_hours || 0}h</span>{u.merchandise_issued && <Package className="w-3 h-3 text-green-500" />}<span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[u.role] || ROLE_COLORS.member}`}>{u.role}</span><Eye className="w-4 h-4 text-slate-300" /></div>
       </div>
       {expanded && (
         <div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-3">
+          {u.status === "suspended" && u.suspension_reason && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-xs" data-testid={`suspension-info-${u.email}`}>
+              <p className="font-medium text-red-700">Suspended: <span className="font-normal">{u.suspension_reason}</span></p>
+              {u.suspended_until && <p className="text-red-600">Until: {u.suspended_until}</p>}
+              {u.suspended_by && <p className="text-red-500 text-[10px]">By: {u.suspended_by}</p>}
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">{u.pan_number && <div><span className="text-slate-400">PAN:</span> {u.pan_number} {u.pan_verified ? <span className="text-green-600">(Verified)</span> : <span className="text-red-500">(Unverified)</span>}</div>}{u.aadhaar_number && <div><span className="text-slate-400">Aadhaar:</span> {u.aadhaar_number}</div>}{u.address && <div className="col-span-2"><span className="text-slate-400">Address:</span> {u.address}</div>}</div>
           {u.role === "volunteer" && (<><div><p className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1"><Award className="w-3 h-3" /> Badges</p><div className="flex flex-wrap gap-1 mb-2">{(u.badges || []).map(b => (<span key={b} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100">{b}<button onClick={() => onRemoveBadge(u.email, b)} className="text-red-400 hover:text-red-600">&times;</button></span>))}</div><div className="flex gap-1"><select value={newBadge} onChange={e => setNewBadge(e.target.value)} className="text-xs border rounded-lg px-2 py-1"><option value="">Add badge...</option>{BADGES.filter(b => !(u.badges || []).includes(b)).map(b => <option key={b} value={b}>{b}</option>)}</select>{newBadge && <button onClick={() => { onAddBadge(u.email, newBadge); setNewBadge(""); }} className="text-xs text-[#1E56A0]">Add</button>}</div></div>
           <div className="flex flex-wrap items-end gap-4"><div><label className="text-xs text-slate-400 block mb-1">Hours</label><div className="flex gap-1"><input type="number" value={hours} onChange={e => setHours(parseInt(e.target.value) || 0)} className="w-20 text-xs border rounded-lg px-2 py-1" /><button onClick={() => onUpdate(u.email, { volunteer_hours: hours })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg">Save</button></div></div><label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={u.merchandise_issued || false} onChange={e => onUpdate(u.email, { merchandise_issued: e.target.checked })} className="rounded" /><Package className="w-3 h-3" /> Merch</label></div></>)}
           <div><label className="text-xs text-slate-400 block mb-1">Comments</label><div className="flex gap-1"><textarea value={comments} onChange={e => setComments(e.target.value)} rows={2} className="flex-1 text-xs border rounded-lg px-2 py-1 resize-none" /><button onClick={() => onUpdate(u.email, { admin_comments: comments })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg self-end">Save</button></div></div>
           <div className="flex flex-wrap gap-2 pt-2 border-t border-sky-50">
             {u.role !== "admin" && <Select onValueChange={val => { if (window.confirm(`Change role to ${val}?`)) onUpdate(u.email, { role: val }); }}><SelectTrigger className="h-8 text-xs w-40 rounded-lg"><SelectValue placeholder="Change role..." /></SelectTrigger><SelectContent>{u.role !== "volunteer" && <SelectItem value="volunteer">Volunteer</SelectItem>}{u.role !== "member" && <SelectItem value="member">Member</SelectItem>}</SelectContent></Select>}
-            {u.status !== "suspended" ? (<div className="flex items-center gap-1"><input placeholder="Reason" value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="text-xs border rounded-lg px-2 py-1 w-28" /><input type="date" value={suspendUntil} onChange={e => setSuspendUntil(e.target.value)} className="text-xs border rounded-lg px-2 py-1 w-32" /><button onClick={() => { if (window.confirm(`Suspend?`)) onUpdate(u.email, { status: "suspended", suspension_reason: suspendReason, suspended_until: suspendUntil }); }} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-700"><PauseCircle className="w-3 h-3" />Suspend</button></div>) : (<button onClick={() => onUpdate(u.email, { status: "active" })} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-700"><PlayCircle className="w-3 h-3" />Unsuspend</button>)}
-            <button onClick={() => onDelete(u.email)} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600"><Trash2 className="w-3 h-3" />Remove</button>
+            {u.pan_number && <button onClick={() => onVerifyPan(u.email)} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-[#1E56A0] hover:bg-sky-100 border border-sky-200" data-testid={`verify-pan-${u.email}`}><Shield className="w-3 h-3" />{u.pan_verified ? "Re-verify PAN" : "Verify PAN"}</button>}
+            {u.status !== "suspended" ? (
+              <div className="flex items-center gap-1 flex-wrap" data-testid={`suspend-row-${u.email}`}>
+                <input placeholder="Suspension reason*" value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="text-xs border rounded-lg px-2 py-1 w-44" data-testid={`suspend-reason-${u.email}`} />
+                <input type="date" value={suspendUntil} onChange={e => setSuspendUntil(e.target.value)} className="text-xs border rounded-lg px-2 py-1 w-32" data-testid={`suspend-until-${u.email}`} />
+                <button onClick={handleSuspend} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100" data-testid={`suspend-btn-${u.email}`}><PauseCircle className="w-3 h-3" />Suspend</button>
+              </div>
+            ) : (
+              <button onClick={() => { if (window.confirm(`Restore ${u.name}'s account?`)) onUpdate(u.email, { status: "active" }); }} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100" data-testid={`unsuspend-btn-${u.email}`}><PlayCircle className="w-3 h-3" />Unsuspend</button>
+            )}
+            <button onClick={() => setShowRemove(!showRemove)} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100" data-testid={`remove-btn-${u.email}`}><Trash2 className="w-3 h-3" />Remove</button>
             <button onClick={() => onToggleWall(u.email, isOnWall)} className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg ${isOnWall ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-amber-50 text-amber-600"}`}><Star className={`w-3 h-3 ${isOnWall ? "fill-amber-500" : ""}`} />{isOnWall ? "On Wall" : "Add Wall"}</button>
           </div>
+          {showRemove && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mt-2" data-testid={`remove-confirm-${u.email}`}>
+              <p className="text-xs font-medium text-red-700 mb-2">⚠️ Remove {u.name} ({u.email})? This is logged with your reason.</p>
+              <div className="flex gap-2">
+                <input placeholder="Reason for removal (min 5 chars)*" value={removeReason} onChange={e => setRemoveReason(e.target.value)} className="flex-1 text-xs border border-red-300 rounded-lg px-2 py-1.5" data-testid={`remove-reason-${u.email}`} />
+                <button onClick={handleRemoveConfirm} className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700" data-testid={`remove-confirm-btn-${u.email}`}>Confirm Remove</button>
+                <button onClick={() => { setShowRemove(false); setRemoveReason(""); }} className="text-xs px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50">Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

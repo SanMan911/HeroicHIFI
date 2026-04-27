@@ -128,3 +128,20 @@ class EventReportInput(BaseModel):
 class AdminPromotionRequest(BaseModel):
     target_email: str
     reason: str = ""
+
+class DeleteUserInput(BaseModel):
+    reason: str
+
+class SubscriptionInput(BaseModel):
+    plan: str  # "monthly" | "quarterly"
+    amount: int  # rupees per cycle
+    name: str
+    email: str
+    phone: str
+    pan_number: str
+    address: Optional[str] = ""
+
+class PANVerifyInput(BaseModel):
+    pan: str
+    aadhaar: Optional[str] = ""
+    name: str

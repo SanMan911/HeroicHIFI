@@ -1,0 +1,74 @@
+{
+  "summary": "Phase 3 testing: 23/23 backend tests pass (Razorpay subscriptions stub, Sandbox PAN stub, delete-with-reason audit, suspend-with-reason audit, Star Hero aggregate). Frontend Donate recurring toggle, admin Roster spec filter, Verify PAN button, and inline Suspend/Remove panels are all wired. Minor: data-testid naming for plan buttons and remove/suspend buttons differs from the spec in the review request, but functionally everything works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Donate /donate", "issues": ["Recurring section shows 'Please log in to set up a recurring donation' for guests. UI is correct but the toggle still allows selecting Monthly/Quarterly; consider greying out the plan buttons until logged in to reduce confusion."]}
+    ],
+    "testid_naming_deviations": [
+      {"location": "/donate", "expected": "recurring-plan-monthly / recurring-plan-quarterly", "actual": "plan-monthly / plan-quarterly", "note": "Inside [data-testid=recurring-plan-row]. Functionally fine; tests in this run used the actual ids."},
+      {"location": "Admin Roster user card", "expected": "remove-user-{email} / suspend-user-{email}", "actual": "remove-btn-{email} / suspend-btn-{email}", "note": "All other related ids present: suspend-row-{email}, suspend-reason-{email}, suspend-until-{email}, verify-pan-{email}."}
+    ]
+  },
+  "passed_tests": [
+    "Backend: POST /api/subscriptions/create (monthly stub) -> mode=stub, status=placeholder_plan, persisted in db.subscriptions",
+    "Backend: POST /api/subscriptions/create rejects invalid plan with 400",
+    "Backend: POST /api/subscriptions/create rejects amount<100 with 400",
+    "Backend: GET /api/subscriptions/mine returns caller's subscriptions",
+    "Backend: GET /api/admin/subscriptions admin-only, returns all",
+    "Backend: GET /api/admin/subscriptions returns 401/403 without auth",
+    "Backend: POST /api/subscriptions/{id}/cancel sets status=cancelled, cancelled_at",
+    "Backend: POST /api/subscriptions/{id}/cancel returns 404 on missing id",
+    "Backend: POST /api/subscriptions/webhook with bad signature returns {verified:false, status:received} and persists in db.webhook_events",
+    "Backend: POST /api/admin/verify-pan-adhoc placeholder keys -> {pan.status:placeholder_keys, mode:stub}; aadhaar_link.status:placeholder_keys",
+    "Backend: POST /api/admin/verify-pan-adhoc invalid PAN format -> status:invalid_format",
+    "Backend: POST /api/admin/verify-pan-adhoc requires admin (401/403)",
+    "Backend: POST /api/admin/users/{email}/verify-pan placeholder -> mode=stub, status=placeholder_keys; persists pan_verification_status",
+    "Backend: POST /api/admin/users/{email}/verify-pan returns 404 for unknown user",
+    "Backend: DELETE /api/admin/users/{email} without body -> 422 (FastAPI body required)",
+    "Backend: DELETE /api/admin/users/{email} short reason -> 400",
+    "Backend: DELETE /api/admin/users/{email} unknown user -> 404",
+    "Backend: DELETE /api/admin/users/{ADMIN_EMAIL} (self) -> 400",
+    "Backend: PUT /api/admin/users/{email}/update status=suspended without reason -> 400",
+    "Backend: PUT /api/admin/users/{email}/update status=suspended short reason -> 400",
+    "Backend: PUT /api/admin/users/{email}/update suspend->active flow persists suspended_by, suspension_reason, then unsuspended_at/by",
+    "Backend: GET /api/admin/events/pending works (Star Hero aggregate path)",
+    "Backend: GET /api/admin/stats includes verification.pan_verified counters",
+    "Frontend: /donate shows [data-testid=recurring-toggle-section] with [data-testid=recurring-toggle]",
+    "Frontend: After enabling toggle, [data-testid=recurring-plan-row] reveals plan-monthly + plan-quarterly buttons",
+    "Frontend: Guest user sees 'Please log in to set up a recurring donation' message (correct gating)",
+    "Frontend: Admin Dashboard Roster tab renders [data-testid=spec-filter-row] with chips spec-filter-all/education/healthcare/environment/food/women/animal/clothing (8 chips)",
+    "Frontend: Admin user card expand -> [data-testid=verify-pan-{email}], [data-testid=suspend-btn-{email}] with inline [data-testid=suspend-reason-{email}] + [data-testid=suspend-until-{email}], [data-testid=remove-btn-{email}]"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_features.py",
+    "/app/test_reports/pytest/pytest_phase3_results.xml"
+  ],
+  "action_items": [
+    "Optional consistency: rename frontend testids to match the spec — plan-monthly -> recurring-plan-monthly, plan-quarterly -> recurring-plan-quarterly, remove-btn-{email} -> remove-user-{email}, suspend-btn-{email} -> suspend-user-{email}. Or update the spec/docs to match current naming. Either works; just align them so the QA brief and code agree.",
+    "Donate page UX: when guest enables Make Recurring, disable the Monthly/Quarterly buttons (currently they remain clickable while the warning says 'Please log in') OR hide plan picker until login.",
+    "Inline Remove panel was rendered (button present) but I only smoke-checked it; main agent should verify the remove panel collects min-5-char reason and POSTs DELETE with body via the wired flow."
+  ],
+  "critical_code_review_comments": [
+    "routes/admin.py is now ~620 lines — grew with PAN-verify and delete-with-reason. Recommend splitting into routes/admin_users.py (users/badges/PAN/delete/suspend), routes/admin_events.py (events/reports), routes/admin_promotions.py (multi-admin approval).",
+    "subscriptions.py: cancel_subscription branch uses startswith('sub_PENDING') to detect stub IDs — fine, but consider centralising the 'is_stub' check in razorpay_subs.py for symmetry.",
+    "utils/sandbox.py imports httpx unconditionally; ensure it's in requirements.txt (it is). Good — placeholder branch returns deterministic stub without hitting the network. Verified.",
+    "admin.py L122: DELETE endpoint accepts body via `data: DeleteUserInput` — FastAPI supports this but Swagger UI sometimes hides DELETE bodies. Not a bug; flag for the team. Tests confirmed the 400/422/404 paths work.",
+    "Star Hero aggregate (admin.py L432-447): single $unwind+$group is correct and O(1) DB calls — addresses prior N+1 review note.",
+    "subscriptions webhook: even with invalid signature it persists payload to db.webhook_events — good for forensics. Returns 200 (not 401) so Razorpay won't retry indefinitely on misconfig.",
+    "DeleteUserInput pydantic model has no min length on reason — backend manually checks len >= 5. Consider adding `Field(min_length=5)` for clearer 422 error semantics; current behaviour returns 400 from manual check (still tested and works)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_features.py (NEW)",
+    "/app/test_reports/pytest/pytest_phase3_results.xml (NEW)"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% functional, minor testid naming deviations"},
+  "test_credentials": {"admin": {"email": "admin@heroichifi.org", "password": "HHF@admin2024"}},
+  "seed_data_creation": "Created one Razorpay-stub subscription doc in db.subscriptions for admin@heroichifi.org (plan=monthly, amount=500, status=cancelled by end of test). One webhook_events row with verified=false. No users were deleted — 404/400 paths tested only. Suspend/unsuspend cycled cleanly on first non-admin user.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 (Razorpay subs, Sandbox PAN, audit delete/suspend, Star Hero aggregate, recurring donate UI, spec filter, verify-pan UI) all green. Naming mismatch between QA brief and code is the only outstanding cleanup. Tests in /app/backend/tests/test_phase3_features.py are stable and idempotent — safe to re-run as regression. db.subscriptions contains 1 cancelled stub sub (test_sub@example.com); db.webhook_events grows by ~1 per run.",
+  "rca_of_the_issue": "No new bug RCA — feature additions all behave per spec. Minor: brief's testid names (recurring-plan-monthly / remove-user-{email} / suspend-user-{email}) differ from implementation (plan-monthly / remove-btn-{email} / suspend-btn-{email}). Cause: review request was authored against an earlier draft of Donate.js/Dashboard.js. Mitigation: align names in either spec or code."
+}

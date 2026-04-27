@@ -36,6 +36,8 @@ export default function Donate() {
     address: user?.address || "", message: "",
   });
   const [customAmount, setCustomAmount] = useState(false);
+  const [recurring, setRecurring] = useState(false);
+  const [recurringPlan, setRecurringPlan] = useState("monthly");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
   const [otpStep, setOtpStep] = useState(false);
@@ -76,6 +78,25 @@ export default function Donate() {
 
   const submitDonation = async (token) => {
     try {
+      if (recurring) {
+        if (!user) { toast.error("Please log in to set up recurring donations"); setSubmitting(false); return; }
+        const subPayload = {
+          plan: recurringPlan,
+          amount: parseInt(form.amount, 10),
+          name: form.name, email: form.email, phone: form.phone,
+          pan_number: form.pan_number, address: form.address || "",
+        };
+        const { data } = await api.post("/subscriptions/create", subPayload);
+        if (data.short_url) {
+          window.open(data.short_url, "_blank");
+        }
+        toast.success(data.mode === "live"
+          ? `Recurring ${recurringPlan} donation set up! Razorpay will email you the activation link.`
+          : `Recurring donation request recorded. Live activation pending Razorpay plan setup.`);
+        setSuccess({ donation: { ...data.subscription, recurring: true } });
+        setSubmitting(false);
+        return;
+      }
       const payload = { ...form, amount: parseInt(form.amount, 10), otp_token: token || otpToken || undefined };
       const { data } = await api.post("/donations/create-order", payload);
       if (data.razorpay_order_id) {
@@ -262,6 +283,26 @@ export default function Donate() {
                   data-testid="donate-custom-amount-btn">{t.custom}</button>
               </div>
               {customAmount && <Input name="amount" type="number" placeholder={t.amount} value={form.amount} onChange={handleChange} className="rounded-xl" data-testid="donate-custom-amount-input" />}
+            </div>
+
+            {/* Recurring Donation Toggle */}
+            <div className={`rounded-xl border-2 p-4 transition-all ${recurring ? "border-[#FF7F00] bg-[#FF7F00]/5" : "border-sky-100 bg-white"}`} data-testid="recurring-toggle-section">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} className="mt-1 w-4 h-4 accent-[#FF7F00]" data-testid="recurring-toggle" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-[#0D2847]">{lang === "hi" ? "हर महीने स्वचालित दान बनाएं" : "Make this a recurring donation"}</p>
+                  <p className="text-xs text-slate-500 mt-1">{lang === "hi" ? "अपनी प्रतिबद्धता को बार-बार दिखाने की ज़रूरत नहीं – Razorpay UPI AutoPay/कार्ड के माध्यम से स्वचालित मासिक/त्रैमासिक दान।" : "Set up automatic monthly or quarterly donations via Razorpay UPI AutoPay / cards. Cancel anytime from your dashboard."}</p>
+                  {recurring && (
+                    <div className="flex gap-2 mt-3" data-testid="recurring-plan-row">
+                      <button type="button" onClick={() => setRecurringPlan("monthly")} className={`text-xs px-3 py-1.5 rounded-full border-2 font-medium transition-colors ${recurringPlan === "monthly" ? "bg-[#FF7F00] text-white border-[#FF7F00]" : "bg-white text-slate-600 border-amber-200"}`} data-testid="plan-monthly">{lang === "hi" ? "हर महीने" : "Monthly"}</button>
+                      <button type="button" onClick={() => setRecurringPlan("quarterly")} className={`text-xs px-3 py-1.5 rounded-full border-2 font-medium transition-colors ${recurringPlan === "quarterly" ? "bg-[#FF7F00] text-white border-[#FF7F00]" : "bg-white text-slate-600 border-amber-200"}`} data-testid="plan-quarterly">{lang === "hi" ? "हर 3 महीने" : "Quarterly"}</button>
+                    </div>
+                  )}
+                  {recurring && !user && (
+                    <p className="text-xs text-amber-700 mt-2 font-medium">{lang === "hi" ? "कृपया पहले लॉग इन करें।" : "Please log in to set up a recurring donation."}</p>
+                  )}
+                </div>
+              </label>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

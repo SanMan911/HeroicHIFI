@@ -14,6 +14,7 @@ from routes.messages import router as messages_router
 from routes.profile import router as profile_router
 from routes.admin import router as admin_router
 from routes.general import router as general_router
+from routes.subscriptions import router as subscriptions_router
 
 app = FastAPI(title="Heroic HIFI Foundation API")
 
@@ -24,6 +25,7 @@ app.include_router(messages_router)
 app.include_router(profile_router)
 app.include_router(admin_router)
 app.include_router(general_router)
+app.include_router(subscriptions_router)
 
 # Health endpoint
 @app.get("/api/health")

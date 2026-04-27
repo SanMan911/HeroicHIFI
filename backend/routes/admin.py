@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 from config import db
 from models.schemas import (
     StatusUpdate, AdminUserUpdate, BadgeAction, TicketResponse, DriveInput,
-    EmailBlastInput, EventReportInput, AdminPromotionRequest
+    EmailBlastInput, EventReportInput, AdminPromotionRequest, DeleteUserInput,
+    PANVerifyInput
 )
 from utils.auth import require_admin, get_current_user
 from utils.activity import log_activity
 from utils.email import send_email_blast, send_notification_email
 from utils.llm import generate_event_article
+from utils.sandbox import verify_pan, verify_aadhaar_pan_link
 
 router = APIRouter(prefix="/api")
 
@@ -97,11 +99,17 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
     if data.status is not None:
         updates["status"] = data.status
         if data.status == "suspended":
+            if not data.suspension_reason or len(data.suspension_reason.strip()) < 5:
+                raise HTTPException(status_code=400, detail="A suspension reason (min 5 chars) is required")
             updates["suspended_until"] = data.suspended_until or ""
-            updates["suspension_reason"] = data.suspension_reason or ""
+            updates["suspension_reason"] = data.suspension_reason.strip()
+            updates["suspended_at"] = datetime.now(timezone.utc).isoformat()
+            updates["suspended_by"] = admin["email"]
         elif data.status == "active":
             updates["suspended_until"] = None
             updates["suspension_reason"] = ""
+            updates["unsuspended_at"] = datetime.now(timezone.utc).isoformat()
+            updates["unsuspended_by"] = admin["email"]
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     await db.users.update_one({"email": email}, {"$set": updates})
@@ -111,15 +119,66 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
 
 
 @router.delete("/admin/users/{user_email}")
-async def admin_delete_user(user_email: str, user: dict = Depends(require_admin)):
+async def admin_delete_user(user_email: str, data: DeleteUserInput, user: dict = Depends(require_admin)):
     email = user_email.lower().strip()
     if email == user["email"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    result = await db.users.delete_one({"email": email})
-    if result.deleted_count == 0:
+    if not data.reason or len(data.reason.strip()) < 5:
+        raise HTTPException(status_code=400, detail="A removal reason (min 5 chars) is required for audit")
+    target = await db.users.find_one({"email": email}, {"_id": 0, "password_hash": 0})
+    if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    await log_activity("user_deleted", "user", email, user["email"], f"Deleted user: {email}", "")
-    return {"message": f"User {email} deleted successfully"}
+    # Archive before deleting
+    await db.deleted_users_archive.insert_one({
+        "id": str(uuid.uuid4()),
+        "user": target,
+        "deleted_by": user["email"],
+        "reason": data.reason.strip(),
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await db.users.delete_one({"email": email})
+    await log_activity("user_deleted", "user", email, user["email"], f"Reason: {data.reason.strip()}", "")
+    return {"message": f"User {email} removed.", "reason": data.reason.strip()}
+
+
+# ── PAN-Aadhaar Verification (Sandbox API) ──
+@router.post("/admin/users/{user_email}/verify-pan")
+async def admin_verify_pan(user_email: str, admin: dict = Depends(require_admin)):
+    """Verify PAN of a user using Sandbox API (or stub if placeholder keys)."""
+    email = user_email.lower().strip()
+    target = await db.users.find_one({"email": email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    pan = target.get("pan_number", "")
+    name = target.get("name", "")
+    if not pan:
+        raise HTTPException(status_code=400, detail="User has no PAN on file")
+    result = await verify_pan(pan, name)
+    aadhaar = target.get("aadhaar_number", "")
+    link_result = None
+    if aadhaar:
+        link_result = await verify_aadhaar_pan_link(pan, aadhaar)
+    await db.users.update_one({"email": email}, {"$set": {
+        "pan_verified": result["verified"],
+        "pan_verification_status": result["status"],
+        "pan_verification_mode": result["mode"],
+        "pan_verified_at": datetime.now(timezone.utc).isoformat(),
+        "aadhaar_pan_linked": (link_result or {}).get("linked", False),
+    }})
+    await log_activity("pan_verified", "user", email, admin["email"],
+                       f"PAN status={result['status']} mode={result['mode']} link={(link_result or {}).get('status', 'n/a')}", "")
+    return {"verified": result["verified"], "status": result["status"], "mode": result["mode"],
+            "name_match": result.get("name_match", False), "aadhaar_link": link_result, "raw": result.get("raw", {})}
+
+
+@router.post("/admin/verify-pan-adhoc")
+async def admin_verify_pan_adhoc(data: PANVerifyInput, admin: dict = Depends(require_admin)):
+    """Verify any arbitrary PAN/Aadhaar/Name combination without persisting."""
+    pan_result = await verify_pan(data.pan, data.name)
+    link_result = None
+    if data.aadhaar:
+        link_result = await verify_aadhaar_pan_link(data.pan, data.aadhaar)
+    return {"pan": pan_result, "aadhaar_link": link_result}
 
 
 # ── Admin Badges ──
@@ -367,18 +426,25 @@ async def submit_event_report(data: EventReportInput, admin: dict = Depends(requ
         u = await db.users.find_one({"email": email}, {"name": 1, "_id": 0})
         if u:
             volunteer_names.append(u["name"])
-    # Calculate star hero: combination of attendance + hours + admin_rating
+    # Calculate star hero: combination of attendance + hours + admin_rating (single aggregate)
     star_hero_email = ""
     star_hero_name = "the entire team"
     if data.attendance:
+        # Single $unwind aggregation: get count of past attendance per email in O(1) DB calls
+        attendance_agg = await db.event_reports.aggregate([
+            {"$unwind": "$attendance"},
+            {"$match": {"attendance": {"$in": data.attendance}}},
+            {"$group": {"_id": "$attendance", "count": {"$sum": 1}}},
+        ]).to_list(1000)
+        attendance_counts = {a["_id"]: a["count"] for a in attendance_agg}
+        users_list = await db.users.find({"email": {"$in": data.attendance}}, {"_id": 0}).to_list(1000)
         scores = []
-        for email in data.attendance:
-            u = await db.users.find_one({"email": email})
-            if u:
-                attendance_count = await db.event_reports.count_documents({"attendance": email})
-                hours = u.get("volunteer_hours", 0)
-                score = (attendance_count + 1) * 2 + hours + data.admin_rating
-                scores.append({"email": email, "name": u.get("name", ""), "score": score})
+        for u in users_list:
+            email = u["email"]
+            ac = attendance_counts.get(email, 0)
+            hours = u.get("volunteer_hours", 0)
+            score = (ac + 1) * 2 + hours + data.admin_rating
+            scores.append({"email": email, "name": u.get("name", ""), "score": score})
         if scores:
             scores.sort(key=lambda x: x["score"], reverse=True)
             star_hero_email = scores[0]["email"]
