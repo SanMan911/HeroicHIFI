@@ -108,6 +108,7 @@ export default function Dashboard() {
   const [eventReports, setEventReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [webhookHealth, setWebhookHealth] = useState(null);
 
   const isAdmin = user?.role === "admin";
 
@@ -124,7 +125,7 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
@@ -132,6 +133,7 @@ export default function Dashboard() {
         api.get("/admin/events/pending"), api.get("/admin/email-blasts"),
         api.get("/admin/promote-requests"), api.get("/admin/events/reports"), api.get("/notifications"),
         api.get("/admin/subscriptions"),
+        api.get("/admin/webhook-health?limit=15"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -140,6 +142,7 @@ export default function Dashboard() {
       setEmailBlasts(blastsRes.data); setPromotionRequests(promoRes.data);
       setEventReports(reportsRes.data); setNotifications(notifRes.data);
       setSubscriptions(subsRes.data);
+      setWebhookHealth(hookRes.data);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -187,6 +190,7 @@ export default function Dashboard() {
   // Heroic Patrons / Subscriptions
   const handleRecomputePatrons = async () => { try { const { data } = await api.post("/admin/patrons/recompute"); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSimulateCharge = async (subId) => { try { const { data } = await api.post(`/admin/subscriptions/${subId}/simulate-charge`); toast.success(`Charge simulated. ${data.patron?.promoted ? "🎉 Promoted to Heroic Patron!" : `Charges: ${data.patron?.charge_count || 0}/6`}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleReplayWebhook = async (eventId) => { try { const { data } = await api.post(`/admin/webhook-events/${eventId}/replay`); toast.success(`Replayed: ${data.side_effects?.join(", ") || "no side effects"}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -462,6 +466,65 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </div>
+
+              {/* Webhook Health Widget */}
+              {webhookHealth && (
+                <div className="bg-white rounded-2xl border border-sky-100 shadow-sm p-5 mb-6" data-testid="webhook-health-widget">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-base font-semibold text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                      <Activity className={`w-4 h-4 ${webhookHealth.pass_rate >= 90 ? "text-green-600" : webhookHealth.pass_rate >= 50 ? "text-amber-500" : "text-red-500"}`} />
+                      Razorpay Webhook Health
+                    </h3>
+                    <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full border ${webhookHealth.pass_rate >= 90 ? "bg-green-50 text-green-700 border-green-200" : webhookHealth.pass_rate >= 50 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200"}`} data-testid="webhook-pass-rate">
+                      {webhookHealth.pass_rate}% verified
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <div className="bg-sky-50/50 rounded-xl p-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider">Total Events</p><p className="text-xl font-semibold text-[#0D2847]">{webhookHealth.total}</p></div>
+                    <div className="bg-green-50/50 rounded-xl p-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider">Verified</p><p className="text-xl font-semibold text-green-700" data-testid="webhook-verified-count">{webhookHealth.verified}</p></div>
+                    <div className="bg-red-50/50 rounded-xl p-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider">Unverified</p><p className="text-xl font-semibold text-red-600" data-testid="webhook-unverified-count">{webhookHealth.unverified}</p></div>
+                    <div className="bg-amber-50/50 rounded-xl p-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider">Last Verified</p><p className="text-xs font-medium text-[#0D2847]">{webhookHealth.last_verified ? new Date(webhookHealth.last_verified.received_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</p></div>
+                  </div>
+                  {webhookHealth.unverified > 0 && webhookHealth.verified === 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3 text-xs text-red-700">
+                      <strong>⚠️ No verified events yet.</strong> Check that <code className="bg-red-100 px-1 rounded">RAZORPAY_WEBHOOK_SECRET</code> in <code className="bg-red-100 px-1 rounded">.env</code> matches the secret you set in the Razorpay dashboard.
+                    </div>
+                  )}
+                  {webhookHealth.recent.length === 0 ? (
+                    <p className="text-center text-slate-400 py-4 text-xs">No webhook events received yet. Razorpay will deliver the first event when a subscription gets charged.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs" data-testid="webhook-events-table">
+                        <thead className="border-b border-sky-100">
+                          <tr>
+                            <th className="text-left py-2 text-slate-500 font-medium">Time</th>
+                            <th className="text-left py-2 text-slate-500 font-medium">Event</th>
+                            <th className="text-left py-2 text-slate-500 font-medium">Status</th>
+                            <th className="text-right py-2 text-slate-500 font-medium">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {webhookHealth.recent.map(e => (
+                            <tr key={e.id} className="border-b border-sky-50 hover:bg-sky-50/30" data-testid={`webhook-event-${e.id}`}>
+                              <td className="py-2 text-slate-400 whitespace-nowrap">{new Date(e.received_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                              <td className="py-2"><span className="px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100 text-[10px] font-medium">{e.event}</span></td>
+                              <td className="py-2">
+                                {e.verified
+                                  ? <span className="inline-flex items-center gap-1 text-green-700"><CheckCircle className="w-3 h-3" />verified</span>
+                                  : <span className="inline-flex items-center gap-1 text-red-600"><XCircle className="w-3 h-3" />unverified</span>}
+                                {e.replayed_at && <span className="ml-2 text-[10px] text-amber-600">↻ replayed</span>}
+                              </td>
+                              <td className="py-2 text-right">
+                                <button onClick={() => handleReplayWebhook(e.id)} className="text-[10px] px-2 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 font-medium" data-testid={`replay-webhook-${e.id}`}>Replay</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
               <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">All Subscriptions ({subscriptions.length})</h3>
               {subscriptions.length === 0 ? (
                 <p className="text-center text-slate-400 py-12">No recurring subscriptions yet. Donors can opt-in from the Donate page.</p>

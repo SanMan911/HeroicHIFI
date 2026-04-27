@@ -184,3 +184,86 @@ async def admin_simulate_charge(sub_id: str, admin: dict = Depends(require_admin
     await log_activity("subscription_charge_simulated", "subscription", sub_id, admin["email"],
                        f"email={sub['email']} amount={sub.get('amount', 0)} promoted={promo.get('promoted', False)}", "")
     return {"message": "Charge simulated.", "patron": promo}
+
+
+
+# ── Webhook Health (admin) ──
+@router.get("/admin/webhook-health")
+async def admin_webhook_health(limit: int = 25, admin: dict = Depends(require_admin)):
+    """Summary of recent Razorpay webhook events for the admin dashboard."""
+    total = await db.webhook_events.count_documents({"source": "razorpay"})
+    verified = await db.webhook_events.count_documents({"source": "razorpay", "verified": True})
+    unverified = total - verified
+    pass_rate = round((verified / total) * 100, 1) if total else 0.0
+    last_event = await db.webhook_events.find_one(
+        {"source": "razorpay"}, {"_id": 0}, sort=[("received_at", -1)]
+    )
+    last_verified = await db.webhook_events.find_one(
+        {"source": "razorpay", "verified": True}, {"_id": 0}, sort=[("received_at", -1)]
+    )
+    recent = await db.webhook_events.find(
+        {"source": "razorpay"}, {"_id": 0}
+    ).sort("received_at", -1).to_list(limit)
+    # Per-event-type counts
+    by_event_agg = await db.webhook_events.aggregate([
+        {"$match": {"source": "razorpay"}},
+        {"$group": {"_id": "$event", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]).to_list(50)
+    return {
+        "total": total,
+        "verified": verified,
+        "unverified": unverified,
+        "pass_rate": pass_rate,
+        "last_event": last_event,
+        "last_verified": last_verified,
+        "recent": recent,
+        "by_event": [{"event": r["_id"], "count": r["count"]} for r in by_event_agg],
+    }
+
+
+@router.post("/admin/webhook-events/{event_id}/replay")
+async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(require_admin)):
+    """Re-run the webhook handler logic on a stored event (without re-verifying signature).
+    Useful when an event was rejected for signature mismatch but the payload is genuine,
+    or to re-trigger Heroic Patron promotion after manual correction."""
+    evt = await db.webhook_events.find_one({"id": event_id, "source": "razorpay"})
+    if not evt:
+        raise HTTPException(status_code=404, detail="Webhook event not found")
+    payload = evt.get("payload", {}) or {}
+    event = payload.get("event", evt.get("event", "unknown"))
+    side_effects = []
+    if event == "subscription.charged":
+        sub_entity = payload.get("payload", {}).get("subscription", {}).get("entity", {})
+        pay_entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
+        sub_id = sub_entity.get("id", "")
+        amount = (pay_entity.get("amount", 0) or 0) // 100
+        sub_doc = await db.subscriptions.find_one({"razorpay_subscription_id": sub_id})
+        if not sub_doc:
+            side_effects.append("subscription not found in db")
+        else:
+            existing_pay = await db.donations.find_one({"razorpay_payment_id": pay_entity.get("id", "")})
+            if existing_pay:
+                side_effects.append("donation already recorded — skipped duplicate")
+            else:
+                await db.donations.insert_one({
+                    "id": str(uuid.uuid4()), "name": sub_doc["name"], "email": sub_doc["email"],
+                    "phone": sub_doc.get("phone", ""), "amount": amount,
+                    "pan_number": sub_doc.get("pan_number", ""), "aadhaar_number": "",
+                    "address": sub_doc.get("address", ""),
+                    "message": f"Recurring {sub_doc['plan']} donation (replayed)",
+                    "status": "confirmed", "razorpay_payment_id": pay_entity.get("id", ""),
+                    "subscription_id": sub_id, "replayed": True,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+                side_effects.append("donation recorded")
+            promo = await promote_if_qualified(sub_doc["email"])
+            if promo.get("promoted"):
+                side_effects.append(f"heroic patron promoted (charges={promo['charge_count']})")
+    await db.webhook_events.update_one({"id": event_id}, {"$set": {
+        "replayed_at": datetime.now(timezone.utc).isoformat(),
+        "replayed_by": admin["email"],
+    }})
+    await log_activity("webhook_replayed", "webhook", event_id, admin["email"],
+                       f"event={event} side_effects={'; '.join(side_effects) or 'none'}", "")
+    return {"message": "Event replayed.", "event": event, "side_effects": side_effects}

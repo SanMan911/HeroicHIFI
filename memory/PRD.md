@@ -14,8 +14,9 @@
 - ✅ `RAZORPAY_WEBHOOK_SECRET` — auto-charge → donation record + Heroic Patron auto-promotion is live (verified end-to-end with real HMAC signatures)
 
 **Webhook URL configured in Razorpay dashboard:**
-`https://hifi-ngo-portal.preview.emergentagent.com/api/subscriptions/webhook`
-⚠️ **MUST be updated to the production domain when the app is deployed to a real host (Render/Vercel/custom domain).**
+`https://hifi-ngo-portal.preview.emergentagent.com/api/subscriptions/webhook` (preview/dev)
+
+⚠️ **Production frontend is at `https://www.heroichifi.org` (Vercel) but the BACKEND lives on Render at a separate `*.onrender.com` URL. Razorpay webhook URL must point to the BACKEND, not the frontend.** When user provides Render URL → update Razorpay dashboard → use `https://<render-app>.onrender.com/api/subscriptions/webhook` (or set up `api.heroichifi.org` CNAME → Render).
 
 **How to obtain the remaining keys:**
 - Sandbox: Sign up at https://sandbox.co.in → Dashboard → API Keys
