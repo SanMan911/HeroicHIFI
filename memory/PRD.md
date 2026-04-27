@@ -1,21 +1,23 @@
 # Heroic HIFI Foundation — PRD
 
-## 🚨 PINNED PRIORITY — KEYS PENDING USER ACTION 🚨
+## 🚨 PINNED PRIORITY — REMAINING KEYS PENDING USER ACTION 🚨
 **Until these are populated, the corresponding features run in stub/placeholder mode:**
 
 | # | Key | Where to set | What unlocks |
 |---|---|---|---|
-| 1 | `RAZORPAY_PLAN_MONTHLY` | `backend/.env` | Monthly recurring donations go LIVE |
-| 2 | `RAZORPAY_PLAN_QUARTERLY` | `backend/.env` | Quarterly recurring donations go LIVE |
-| 3 | `RAZORPAY_WEBHOOK_SECRET` | `backend/.env` | Razorpay webhook signatures verified (auto-charge → donation record + auto Heroic Patron promotion) |
-| 4 | `SANDBOX_API_KEY` | `backend/.env` | PAN verification goes LIVE |
-| 5 | `SANDBOX_API_SECRET` | `backend/.env` | PAN-Aadhaar link verification goes LIVE |
+| 1 | `RAZORPAY_WEBHOOK_SECRET` | `backend/.env` | Webhook signature verified → auto-charged donations recorded + auto Heroic Patron promotion |
+| 2 | `SANDBOX_API_KEY` | `backend/.env` | PAN verification goes LIVE |
+| 3 | `SANDBOX_API_SECRET` | `backend/.env` | PAN-Aadhaar link verification goes LIVE |
 
-**How to obtain:**
-- Razorpay: Dashboard → Subscriptions → Plans → Create monthly + quarterly plans → copy `plan_xxx` IDs. Webhook secret: Dashboard → Settings → Webhooks → set URL to `{API}/api/subscriptions/webhook`.
-- Sandbox: Sign up at https://sandbox.co.in → Dashboard → API Keys.
+**Already activated (✅ LIVE):**
+- ✅ `RAZORPAY_KEY_ID` (`rzp_live_SiX7Z60muB4Hpg`) + `RAZORPAY_KEY_SECRET`
+- ✅ 4 Razorpay Plans: monthly (₹100), quarterly (₹275), half_yearly (₹525), annual (₹1000)
 
-**This block must remain at the top of every future PRD until all 5 items are LIVE. Action item for next agent: remind the user.**
+**How to obtain the remaining keys:**
+- Razorpay webhook: Dashboard → Settings → Webhooks → URL `{API}/api/subscriptions/webhook` → copy secret
+- Sandbox: Sign up at https://sandbox.co.in → Dashboard → API Keys
+
+**This block must remain at the top of every future PRD until all 3 items are LIVE. Action item for next agent: remind the user.**
 
 ---
 
@@ -27,7 +29,7 @@ Build a website for "Heroic HIFI Foundation", a Section 8 Non-Profit Organizatio
 - Backend: FastAPI + Motor (async MongoDB) — modular routes/, utils/, models/
 - DB: MongoDB
 - Email: Resend (`noreply@heroichifi.org`) — LIVE
-- Payments: Razorpay (test keys active: `rzp_test_ShgRW8UBE4Erlb`); **Subscription plans pending — see PINNED block above**
+- Payments: Razorpay **LIVE** (`rzp_live_SiX7Z60muB4Hpg`) — 4 plans active: monthly ₹100, quarterly ₹275, half-yearly ₹525, annual ₹1000
 - Storage: Emergent Object Storage (avatars)
 - AI: Gemini 3 Flash via emergentintegrations
 - Verification: Sandbox.co.in (PAN/Aadhaar) — **keys pending — see PINNED block above**

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLang } from "../context/LanguageContext";
 import { useAuth } from "../context/AuthContext";
 import translations from "../data/translations";
@@ -53,6 +53,21 @@ export default function Donate() {
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
   const selectAmount = (amt) => { setForm({ ...form, amount: String(amt) }); setCustomAmount(false); };
+
+  // Hydrate form from user when AuthContext resolves async (fixes direct-load case)
+  useEffect(() => {
+    if (user) {
+      setForm(prev => ({
+        ...prev,
+        name: prev.name || user.name || "",
+        email: prev.email || user.email || "",
+        phone: prev.phone || user.phone || "",
+        pan_number: prev.pan_number || user.pan_number || "",
+        aadhaar_number: prev.aadhaar_number || user.aadhaar_number || "",
+        address: prev.address || user.address || "",
+      }));
+    }
+  }, [user]);
 
   const backendUrl = process.env.REACT_APP_BACKEND_URL;
 
