@@ -1,0 +1,77 @@
+{
+  "summary": "Phase 2 testing complete: 18/18 backend tests pass. Frontend admin dashboard, mandatory event report modal, AI article generation (Gemini), email blast tab, and multi-admin promotion UI all work. ONE missing UI feature: Volunteer Specialization dropdown is not rendered in registration form (backend schema supports it, frontend never asks).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Login.js (Registration form)",
+        "issue": "Volunteer Specialization dropdown/multi-select is MISSING. When user selects role=volunteer, no specialization picker is shown. Backend schema (RegisterInput.specializations: List[str]) and routes/auth.py both accept and persist the field, but Login.js never collects it. Affected lines: ~193-208 of Login.js.",
+        "selector": "[data-testid=\"register-specializations\"] (does not exist)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: POST /api/auth/login (admin)",
+    "Backend: GET /api/admin/stats returns donations/members/drives/role_requests",
+    "Backend: GET /api/admin/users returns roster",
+    "Backend: GET /api/drives is public",
+    "Backend: GET /api/admin/role-requests requires admin",
+    "Backend: GET /api/admin/activity-logs respects limit",
+    "Backend: POST /api/admin/email-blast requires admin (401 without)",
+    "Backend: POST /api/admin/email-blast accepts target=members and returns 200/400 gracefully",
+    "Backend: GET /api/admin/email-blasts returns list",
+    "Backend: GET /api/notifications requires auth",
+    "Backend: GET /api/notifications returns list for admin",
+    "Backend: GET /api/notifications/unread-count returns count",
+    "Backend: GET /api/admin/events/pending returns past unreported drives",
+    "Backend: GET /api/admin/events/reports returns list",
+    "Backend: POST /api/admin/events/report - creates drive, submits report, AI article generated (>30 chars) via Gemini, drive marked reported, article visible at GET /api/events/articles",
+    "Backend: GET /api/admin/promote-requests returns list",
+    "Backend: POST /api/admin/promote-request returns 404 for nonexistent user",
+    "Backend: POST /api/auth/register accepts specializations field (no 422 on schema)",
+    "Frontend: Admin login redirects to /dashboard",
+    "Frontend: Mandatory Event Report Modal BLOCKS the admin dashboard for past unreported drive (data-testid=event-report-modal visible on load)",
+    "Frontend: Modal contains required fields - report-time, report-rating, report-resources, report-summary, report-outcome, report-issues, attendance checkboxes per volunteer",
+    "Frontend: Submit Report & Generate Article triggers Gemini AI; modal closes within ~6s",
+    "Frontend: After modal closes, admin can navigate other tabs",
+    "Frontend: Email Blast tab renders [data-testid=admin-email-blast]",
+    "Frontend: Admins tab renders multi-admin promotion UI (promote-email, promote-reason, promote-btn) with copy 'Requires approval from N other admin(s)'",
+    "Frontend: All tabs render: Overview, Donations, Roster, Requests, Events, Email, Queries, Messages, Tickets, Admins, Articles"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_features.py",
+    "/app/test_reports/pytest/pytest_phase2_results.xml"
+  ],
+  "action_items": [
+    "Add Volunteer Specialization multi-select/dropdown to /app/frontend/src/pages/Login.js registration form. Show conditionally when form.role === 'volunteer'. Suggested options (per NGO missions): Education, Healthcare, Environment, Food Distribution, Women Empowerment, Animal Welfare, Clothing Drives. Wire it to form.specializations and pass through in api.post('/auth/register', {..., specializations: form.specializations}). Add data-testid='register-specializations'."
+  ],
+  "critical_code_review_comments": [
+    "admin.py is 557 lines — consider splitting Phase 2 features (notifications, promotions, email-blasts, event-reports) into separate route modules for maintainability.",
+    "POST /api/admin/events/report sends notification emails inside the request loop with try/except pass — if Resend rate-limits or fails, errors are silently swallowed. Consider background task / retry queue.",
+    "Star Hero scoring uses event_reports.count_documents inside an N-loop (one query per attendee) — O(N) DB calls per report. For larger events this could be slow; consider a single aggregate.",
+    "Mandatory modal logic: backend marks drive_type='past' AND reported=true on report submission. Pending list filters by date <= today AND reported != true — correct.",
+    "Frontend Dashboard.js is 538 lines with most logic inline — split into per-tab components for maintainability.",
+    "Login.js registration: Volunteer Specialization UI is MISSING (highest priority gap)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_features.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 tests passed)",
+    "frontend": "~92% (1 missing UI feature: volunteer specializations on registration)"
+  },
+  "test_credentials": {
+    "admin": {"email": "admin@heroichifi.org", "password": "HHF@admin2024"}
+  },
+  "seed_data_creation": "Test created and cleaned up one drive 'TEST_phase2_drive' with full event report + AI article cycle. One event_report record persists in db.event_reports for the test drive (drive itself was deleted afterward, but the report+article remain — visible publicly at /api/events/articles as expected).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 backend is fully working (email blast, notifications, multi-admin promotion, AI event articles via Gemini, mandatory blocking modal). Only gap: Volunteer Specialization UI missing on Login.js registration. After main agent adds the specializations dropdown, retest registration flow end-to-end (register volunteer with specializations -> verify GET /api/admin/users returns specializations array). Note: /api/events/articles will accumulate test articles; consider cleanup. Seed admin email is admin@heroichifi.org / HHF@admin2024.",
+  "rca_of_the_issue": "Volunteer specialization missing in UI: backend models/schemas.py:26 has 'specializations: List[str] = []' and auth.py:71 persists it on registration. Login.js role-selection block (lines 193-208) has Member/Volunteer buttons but no follow-up specializations field. The frontend simply omits sending the field, so all volunteers register with empty specializations. Mitigation: add a multi-select chip/checkbox UI in Login.js step-1 form, wire to form.specializations, send in payload to /auth/register."
+}
