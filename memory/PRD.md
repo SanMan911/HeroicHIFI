@@ -5,19 +5,22 @@
 
 | # | Key | Where to set | What unlocks |
 |---|---|---|---|
-| 1 | `RAZORPAY_WEBHOOK_SECRET` | `backend/.env` | Webhook signature verified → auto-charged donations recorded + auto Heroic Patron promotion |
-| 2 | `SANDBOX_API_KEY` | `backend/.env` | PAN verification goes LIVE |
-| 3 | `SANDBOX_API_SECRET` | `backend/.env` | PAN-Aadhaar link verification goes LIVE |
+| 1 | `SANDBOX_API_KEY` | `backend/.env` | PAN verification goes LIVE |
+| 2 | `SANDBOX_API_SECRET` | `backend/.env` | PAN-Aadhaar link verification goes LIVE |
 
 **Already activated (✅ LIVE):**
 - ✅ `RAZORPAY_KEY_ID` (`rzp_live_SiX7Z60muB4Hpg`) + `RAZORPAY_KEY_SECRET`
 - ✅ 4 Razorpay Plans: monthly (₹100), quarterly (₹275), half_yearly (₹525), annual (₹1000)
+- ✅ `RAZORPAY_WEBHOOK_SECRET` — auto-charge → donation record + Heroic Patron auto-promotion is live (verified end-to-end with real HMAC signatures)
+
+**Webhook URL configured in Razorpay dashboard:**
+`https://hifi-ngo-portal.preview.emergentagent.com/api/subscriptions/webhook`
+⚠️ **MUST be updated to the production domain when the app is deployed to a real host (Render/Vercel/custom domain).**
 
 **How to obtain the remaining keys:**
-- Razorpay webhook: Dashboard → Settings → Webhooks → URL `{API}/api/subscriptions/webhook` → copy secret
 - Sandbox: Sign up at https://sandbox.co.in → Dashboard → API Keys
 
-**This block must remain at the top of every future PRD until all 3 items are LIVE. Action item for next agent: remind the user.**
+**This block must remain at the top of every future PRD until all 2 items are LIVE. Action item for next agent: remind the user.**
 
 ---
 
