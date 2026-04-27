@@ -42,7 +42,7 @@ backend/
 - **Member** — Supporter. Gets subscription updates and donation access.
 
 ## Implemented Features
-1. OTP registration with role selection (volunteer/member) + age auto-calc from DOB
+1. OTP registration with role selection (volunteer/member) + age auto-calc from DOB + volunteer specialization multi-select (7 areas)
 2. Login + JWT + password reset via email
 3. Razorpay donations (test keys active) + 80G PDF certificates
 4. Community messaging (phone numbers stripped)
@@ -62,13 +62,17 @@ backend/
 ## Prioritized Backlog
 ### P0 - Next Sprint (User Requested)
 - Recurring monthly donations (Razorpay Subscriptions)
-- Email blasts (admin → volunteers/members/all)
-- Volunteer attendance tracking per drive
-- AI-generated event articles (post-drive)
-- In-app + email notifications for tagged volunteers
-- Star Hero auto-calculation (attendance + hours + rating)
-- Registration volunteer specialization field
-- Multi-admin approval for admin promotion
+- PAN-Aadhaar verification via Sandbox API (waiting on user account)
+
+### Phase 2 - DONE (2026-04-27)
+- Email blasts (admin → volunteers/members/all) ✅
+- Volunteer attendance tracking per drive ✅
+- AI-generated event articles via Gemini 3 Flash ✅
+- In-app + email notifications (persistent) ✅
+- Star Hero scoring (attendance + hours + rating) ✅
+- Registration volunteer specialization (7 categories) ✅
+- Multi-admin approval for admin promotion ✅
+- Mandatory blocking modal for unreported past drives ✅
 
 ### P1 - Later
 - PAN-Aadhaar verification via Sandbox API

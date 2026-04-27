@@ -20,7 +20,24 @@ export default function Login() {
   const tHero = translations[lang].hero;
   const [isRegister, setIsRegister] = useState(false);
   const [regStep, setRegStep] = useState(1);
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", age: "", dob: "", address: "", pan_number: "", aadhaar_number: "", role: "member" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", age: "", dob: "", address: "", pan_number: "", aadhaar_number: "", role: "member", specializations: [] });
+  const SPECIALIZATIONS = [
+    { key: "education", en: "Education", hi: "शिक्षा" },
+    { key: "healthcare", en: "Healthcare", hi: "स्वास्थ्य" },
+    { key: "environment", en: "Environment", hi: "पर्यावरण" },
+    { key: "food", en: "Food Distribution", hi: "भोजन वितरण" },
+    { key: "women", en: "Women Empowerment", hi: "महिला सशक्तिकरण" },
+    { key: "animal", en: "Animal Welfare", hi: "पशु कल्याण" },
+    { key: "clothing", en: "Clothing Drives", hi: "वस्त्र वितरण" },
+  ];
+  const toggleSpec = (key) => {
+    setForm((f) => ({
+      ...f,
+      specializations: f.specializations.includes(key)
+        ? f.specializations.filter((k) => k !== key)
+        : [...f.specializations, key],
+    }));
+  };
   const [otp, setOtp] = useState("");
   const [otpToken, setOtpToken] = useState("");
   const [otpDebug, setOtpDebug] = useState(null);
@@ -79,6 +96,7 @@ export default function Login() {
       const { data: verifyData } = await api.post("/auth/verify-otp", { email: form.email, otp, purpose: "registration" });
       const { data: regData } = await api.post("/auth/register", {
         ...form, age: form.age ? parseInt(form.age) : null, otp_token: verifyData.otp_token,
+        specializations: form.role === "volunteer" ? form.specializations : [],
       });
       localStorage.setItem("hhf_token", regData.token);
       localStorage.setItem("hhf_user", JSON.stringify(regData.user));
@@ -206,6 +224,29 @@ export default function Login() {
                     </button>
                   </div>
                 </div>
+                {form.role === "volunteer" && (
+                  <div data-testid="register-specializations">
+                    <Label className="text-sm font-medium text-slate-700">
+                      {lang === "hi" ? "आपकी रुचि के क्षेत्र (एक या अधिक चुनें)" : "Your areas of interest (pick one or more)"}
+                    </Label>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {SPECIALIZATIONS.map((s) => {
+                        const active = form.specializations.includes(s.key);
+                        return (
+                          <button
+                            key={s.key}
+                            type="button"
+                            onClick={() => toggleSpec(s.key)}
+                            data-testid={`spec-${s.key}-btn`}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-all ${active ? "border-[#1E56A0] bg-[#1E56A0] text-white" : "border-sky-200 text-slate-600 hover:border-sky-300"}`}
+                          >
+                            {lang === "hi" ? s.hi : s.en}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex gap-2 items-start">
                   <ShieldCheck className="w-4 h-4 text-[#1E56A0] mt-0.5 shrink-0" />
                   <p className="text-xs text-slate-600">{t.pan_aadhaar_note}</p>
