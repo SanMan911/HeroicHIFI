@@ -22,7 +22,7 @@ from config import db
 from models.schemas import SubscriptionInput
 from utils.auth import get_current_user, require_admin
 from utils.activity import log_activity
-from utils.razorpay_subs import create_subscription, cancel_subscription, verify_webhook_signature
+from utils.razorpay_subs import create_subscription, cancel_subscription, verify_webhook_signature, PLAN_AMOUNTS
 from utils.patron import promote_if_qualified, list_patrons, recompute_all, get_patron_summary
 
 logger = logging.getLogger(__name__)
@@ -31,12 +31,11 @@ router = APIRouter(prefix="/api")
 
 @router.post("/subscriptions/create")
 async def subscription_create(data: SubscriptionInput, request: Request, user: dict = Depends(get_current_user)):
-    if data.plan not in ("monthly", "quarterly"):
-        raise HTTPException(status_code=400, detail="Plan must be 'monthly' or 'quarterly'")
-    if data.amount < 100:
-        raise HTTPException(status_code=400, detail="Minimum recurring amount is ₹100")
+    if data.plan not in PLAN_AMOUNTS:
+        raise HTTPException(status_code=400, detail=f"Plan must be one of: {', '.join(PLAN_AMOUNTS.keys())}")
+    amount = PLAN_AMOUNTS[data.plan]  # fixed by plan, set in Razorpay dashboard
 
-    rz = await create_subscription(data.plan, data.amount, {
+    rz = await create_subscription(data.plan, amount, {
         "name": data.name, "email": data.email, "pan_number": data.pan_number,
     })
 
@@ -45,7 +44,7 @@ async def subscription_create(data: SubscriptionInput, request: Request, user: d
         "razorpay_subscription_id": rz["subscription_id"],
         "plan": data.plan,
         "plan_id": rz.get("plan_id", ""),
-        "amount": data.amount,
+        "amount": amount,
         "name": data.name,
         "email": data.email.lower().strip(),
         "phone": data.phone,
@@ -61,7 +60,7 @@ async def subscription_create(data: SubscriptionInput, request: Request, user: d
     await db.subscriptions.insert_one(sub_doc)
     sub_doc.pop("_id", None)
     await log_activity("subscription_created", "subscription", sub_doc["id"], user["email"],
-                       f"{data.plan} ₹{data.amount} ({rz['mode']})", request.client.host if request.client else "")
+                       f"{data.plan} ₹{amount} ({rz['mode']})", request.client.host if request.client else "")
     return {
         "subscription": sub_doc,
         "razorpay_subscription_id": rz["subscription_id"],

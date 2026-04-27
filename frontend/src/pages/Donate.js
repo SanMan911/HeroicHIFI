@@ -38,6 +38,12 @@ export default function Donate() {
   const [customAmount, setCustomAmount] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [recurringPlan, setRecurringPlan] = useState("monthly");
+  const RECURRING_PLANS = [
+    { key: "monthly", amount: 100, en: "Monthly", hi: "मासिक", cycles: 12, sub: "₹100 / month" },
+    { key: "quarterly", amount: 275, en: "Quarterly", hi: "त्रैमासिक", cycles: 4, sub: "₹275 every 3 months" },
+    { key: "half_yearly", amount: 525, en: "Half-Yearly", hi: "अर्धवार्षिक", cycles: 2, sub: "₹525 every 6 months" },
+    { key: "annual", amount: 1000, en: "Annual", hi: "वार्षिक", cycles: 1, sub: "₹1000 / year" },
+  ];
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
   const [otpStep, setOtpStep] = useState(false);
@@ -82,17 +88,17 @@ export default function Donate() {
         if (!user) { toast.error("Please log in to set up recurring donations"); setSubmitting(false); return; }
         const subPayload = {
           plan: recurringPlan,
-          amount: parseInt(form.amount, 10),
           name: form.name, email: form.email, phone: form.phone,
           pan_number: form.pan_number, address: form.address || "",
         };
         const { data } = await api.post("/subscriptions/create", subPayload);
         if (data.short_url) {
+          // LIVE flow — Razorpay hosted authorization page
           window.open(data.short_url, "_blank");
+          toast.success(`Recurring ${recurringPlan} donation set up! Complete authorization in the new tab.`);
+        } else {
+          toast.success(`Recurring donation request recorded. ${data.note || "Razorpay activation pending."}`);
         }
-        toast.success(data.mode === "live"
-          ? `Recurring ${recurringPlan} donation set up! Razorpay will email you the activation link.`
-          : `Recurring donation request recorded. Live activation pending Razorpay plan setup.`);
         setSuccess({ donation: { ...data.subscription, recurring: true } });
         setSubmitting(false);
         return;
@@ -132,7 +138,8 @@ export default function Donate() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.phone || !form.amount || !form.pan_number) {
+    const requiresAmount = !recurring;
+    if (!form.name || !form.email || !form.phone || !form.pan_number || (requiresAmount && !form.amount)) {
       toast.error(t.fill_required_pan);
       return;
     }
@@ -291,15 +298,35 @@ export default function Donate() {
                 <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} className="mt-1 w-4 h-4 accent-[#FF7F00]" data-testid="recurring-toggle" />
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-[#0D2847]">{lang === "hi" ? "हर महीने स्वचालित दान बनाएं" : "Make this a recurring donation"}</p>
-                  <p className="text-xs text-slate-500 mt-1">{lang === "hi" ? "अपनी प्रतिबद्धता को बार-बार दिखाने की ज़रूरत नहीं – Razorpay UPI AutoPay/कार्ड के माध्यम से स्वचालित मासिक/त्रैमासिक दान।" : "Set up automatic monthly or quarterly donations via Razorpay UPI AutoPay / cards. Cancel anytime from your dashboard."}</p>
-                  {recurring && (
-                    <div className="flex gap-2 mt-3" data-testid="recurring-plan-row">
-                      <button type="button" disabled={!user} onClick={() => setRecurringPlan("monthly")} className={`text-xs px-3 py-1.5 rounded-full border-2 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${recurringPlan === "monthly" ? "bg-[#FF7F00] text-white border-[#FF7F00]" : "bg-white text-slate-600 border-amber-200"}`} data-testid="plan-monthly">{lang === "hi" ? "हर महीने" : "Monthly"}</button>
-                      <button type="button" disabled={!user} onClick={() => setRecurringPlan("quarterly")} className={`text-xs px-3 py-1.5 rounded-full border-2 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${recurringPlan === "quarterly" ? "bg-[#FF7F00] text-white border-[#FF7F00]" : "bg-white text-slate-600 border-amber-200"}`} data-testid="plan-quarterly">{lang === "hi" ? "हर 3 महीने" : "Quarterly"}</button>
-                    </div>
-                  )}
+                  <p className="text-xs text-slate-500 mt-1">
+                    {lang === "hi"
+                      ? "Razorpay UPI AutoPay/कार्ड के माध्यम से स्वचालित दान। 6 बार सफल भुगतान के बाद 'Heroic Patron' टियर अनलॉक होता है।"
+                      : "Automatic donations via Razorpay UPI AutoPay / cards. Hit 6 successful charges to unlock the 'Heroic Patron' tier on the Wall of Fame. Cancel anytime from your dashboard."}
+                  </p>
                   {recurring && !user && (
                     <p className="text-xs text-amber-700 mt-2 font-medium">{lang === "hi" ? "कृपया पहले लॉग इन करें।" : "Please log in to set up a recurring donation."}</p>
+                  )}
+                  {recurring && user && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3" data-testid="recurring-plan-row">
+                      {RECURRING_PLANS.map(p => {
+                        const active = recurringPlan === p.key;
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => setRecurringPlan(p.key)}
+                            data-testid={`plan-${p.key}`}
+                            className={`p-3 rounded-xl border-2 text-center transition-all ${active ? "border-[#FF7F00] bg-[#FF7F00] text-white shadow-md" : "border-amber-200 bg-white text-slate-700 hover:border-amber-300"}`}
+                          >
+                            <p className={`text-xs font-semibold uppercase tracking-wider ${active ? "text-white/90" : "text-slate-500"}`}>{lang === "hi" ? p.hi : p.en}</p>
+                            <p className={`text-lg font-bold mt-0.5 ${active ? "text-white" : "text-[#0D2847]"}`} style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                              ₹{p.amount.toLocaleString("en-IN")}
+                            </p>
+                            <p className={`text-[10px] mt-0.5 ${active ? "text-white/80" : "text-slate-400"}`}>{p.sub.split(" ").slice(1).join(" ")}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </label>

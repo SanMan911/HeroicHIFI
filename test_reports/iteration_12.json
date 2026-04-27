@@ -1,0 +1,53 @@
+{
+  "summary": "LIVE Razorpay Subscriptions verified end-to-end. Backend: 10/10 pytest pass — all 4 plans (monthly/quarterly/half_yearly/annual) create real sub_* IDs with mode=live and https://rzp.io/* short_urls; backend ignores client-supplied amount and uses fixed PLAN_AMOUNTS; invalid plan -> 400; auth required (401); admin list returns live subs; one-time /api/donations/create-order returns order_* with razorpay_key=rzp_live_SiX7Z60muB4Hpg; /api/heroic-patrons regression OK. Frontend: /donate (logged-in) shows logged-in-notice; toggling [data-testid=recurring-toggle] reveals 4 cards [data-testid=plan-monthly|plan-quarterly|plan-half_yearly|plan-annual] with ₹100/₹275/₹525/₹1,000; recurring submit POSTs {plan,name,email,phone,pan_number,address} with NO amount field and opens new tab to real Razorpay subscription authorization URL. One frontend issue found: form inputs don't hydrate from user context (intermittent empty fields).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Donate.js useState init", "issue": "Form state is snapshotted from `user?.name/email/phone/pan_number/aadhaar_number/address` at first render. If AuthContext hydrates from /api/auth/me AFTER the Donate component mounts, the form fields stay empty even though logged-in-notice is visible (no useEffect syncs user -> form). Reproduced in 2 of 3 runs by navigating directly to /donate; user object exists but Email/Name/Phone are blank, breaking submit (HTML5 required validation blocks click).", "selector": "[data-testid=donate-email-input], [data-testid=donate-name-input]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend POST /api/subscriptions/create monthly -> 200, mode=live, sub_SiX*, short_url https://rzp.io/*, amount=100",
+    "Backend POST /api/subscriptions/create quarterly -> 200, mode=live, amount=275",
+    "Backend POST /api/subscriptions/create half_yearly -> 200, mode=live, amount=525",
+    "Backend POST /api/subscriptions/create annual -> 200, mode=live, amount=1000",
+    "Backend ignores client-side `amount` field — payload {amount:1} stored as PLAN_AMOUNTS[plan]",
+    "Backend POST /api/subscriptions/create plan='invalid' -> 400 with 'Plan must be one of...' message",
+    "Backend POST /api/subscriptions/create without auth -> 401/403",
+    "Backend GET /api/admin/subscriptions returns >=1 mode=live subscription, _id stripped",
+    "Backend GET /api/admin/subscriptions blocks non-admin (401/403)",
+    "Backend GET /api/heroic-patrons -> 200 list, regression passing",
+    "Backend POST /api/donations/create-order (LIVE) -> 200 with order_*, razorpay_key=rzp_live_SiX7Z60muB4Hpg, amount in paise",
+    "Frontend /donate logged-in: 4 plan cards visible after recurring-toggle ON, showing ₹100/₹275/₹525/₹1,000",
+    "Frontend submit with recurring=true & plan=quarterly: API request body has keys [plan,name,email,phone,pan_number,address] (NO 'amount'), response mode=live, short_url=https://rzp.io/rzp/DiJPmagS, sub_SiXc3yRNNaRYA8",
+    "Frontend opens new tab to real Razorpay authorization URL (api.razorpay.com/v1/l/subscriptions/sub_*) and shows success toast 'Recurring quarterly donation set up! Complete authorization in the new tab.'",
+    "Frontend recurring=OFF without amount: API not called, toast 'Please fill all required fields including PAN number.' (amount remains required for one-time path)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_live_subscriptions.py",
+    "/app/test_reports/pytest/pytest_live_subs.xml"
+  ],
+  "action_items": [
+    "Fix Donate.js form state hydration: add a useEffect that syncs `user` -> form when AuthContext loads, e.g. `useEffect(() => { if (user) setForm(f => ({ ...f, name: f.name||user.name||'', email: f.email||user.email||'', phone: f.phone||user.phone||'', pan_number: f.pan_number||user.pan_number||'', aadhaar_number: f.aadhaar_number||user.aadhaar_number||'', address: f.address||user.address||'' })); }, [user]);`. Without this, users navigating directly to /donate may see blank fields and a confusing required-field toast even though logged in."
+  ],
+  "critical_code_review_comments": [
+    "routes/subscriptions.py:subscription_create stores `phone` and other PII fields directly. Consider redacting in logs (log_activity already does, good). LIVE mode now creates real Razorpay subs which will linger in 'created' state and auto-cancel — note in admin docs.",
+    "utils/razorpay_subs.py:create_subscription returns `mode='live'` even on Razorpay API exception (line 115). Status field carries 'error: ...' but mode=live makes the admin list misleading — consider mode='live_error' or keep the failed sub flagged. Currently no test created subs failed so this isn't surfaced.",
+    "Donate.js line 33-37: useState initialised from user object snapshot — pre-existing pattern bug (see action_items). Same pattern likely exists in other forms (Volunteer, Profile pages — not in scope but worth a sweep).",
+    "Donate.js readOnly={!!user} on email field (line 269) means if user hydrates AFTER initial empty state, the email becomes locked-empty. The fix in action_items resolves this.",
+    "subscriptions.py:webhook always returns 200 even on bad signature — correct (Razorpay retry policy) and matches comment."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_live_subscriptions.py (NEW)",
+    "/app/test_reports/pytest/pytest_live_subs.xml (NEW)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "90% — submit flow works end-to-end when fields are filled; intermittent prefill bug"},
+  "test_credentials": {"admin": {"email": "admin@heroichifi.org", "password": "HHF@admin2024"}},
+  "seed_data_creation": "Each pytest run seeds 1 user (test_livesub_<uuid>@example.com) directly via Mongo + creates 4 LIVE Razorpay subscriptions (one per plan) + 1 LIVE order. The 4 subs persist in 'created' state on Razorpay's side until they auto-expire (typically a few days, no charges occur). Frontend test created 1 additional LIVE quarterly sub (sub_SiXc3yRNNaRYA8) under admin@heroichifi.org. Total ~5 LIVE Razorpay sub records per full test cycle. /api/donations/create-order also created a real LIVE Razorpay order_* (no payment captured).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "LIVE Razorpay integration is fully working. Tests in /app/backend/tests/test_live_subscriptions.py are stable (10/10 pass) and use direct-DB user seeding (motor + create_access_token) to bypass OTP. Each run leaks 4 'created'-state Razorpay subs to the live dashboard — they self-expire. Webhook signature verification is intentionally not tested at signature-valid path because RAZORPAY_WEBHOOK_SECRET is still placeholder. The Donate.js form-hydration bug is a pre-existing issue (not introduced by LIVE-keys swap) but became visible during testing — tests work around it by manually filling all fields and removing the readonly attribute on email. Re-run command: `pytest /app/backend/tests/test_live_subscriptions.py -v --tb=short`.",
+  "rca_of_the_issue": "Donate.js bug RCA: useState initial value `user?.email || ''` is evaluated ONCE at first render. AuthContext fetches /api/auth/me asynchronously, so on direct navigation to /donate (e.g. via React Router prefetch or after page refresh), the component mounts before user resolves. After user loads, no useEffect re-syncs the form state. Mitigation: add `useEffect(() => { if (user) setForm(prev => ({...prev, name: prev.name || user.name || '', email: prev.email || user.email || '', phone: prev.phone || user.phone || '', pan_number: prev.pan_number || user.pan_number || '', aadhaar_number: prev.aadhaar_number || user.aadhaar_number || '', address: prev.address || user.address || ''})); }, [user]);`. Reproduction: log in as any user, hard-refresh on /donate URL (or navigate via Link without intermediate dashboard visit) — Email/Name/Phone fields stay empty though logged-in-notice is visible."
+}

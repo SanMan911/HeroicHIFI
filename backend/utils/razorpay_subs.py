@@ -26,12 +26,42 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-PLAN_TO_INTERVAL = {"monthly": ("monthly", 1), "quarterly": ("monthly", 3)}
+PLAN_TO_INTERVAL = {
+    "monthly": ("monthly", 1),
+    "quarterly": ("monthly", 3),
+    "half_yearly": ("monthly", 6),
+    "annual": ("yearly", 1),
+}
+
+# Fixed amount per plan (rupees) — must match what's set in Razorpay dashboard
+PLAN_AMOUNTS = {
+    "monthly": 100,
+    "quarterly": 275,
+    "half_yearly": 525,
+    "annual": 1000,
+}
+
+PLAN_ENV_MAP = {
+    "monthly": "RAZORPAY_PLAN_MONTHLY",
+    "quarterly": "RAZORPAY_PLAN_QUARTERLY",
+    "half_yearly": "RAZORPAY_PLAN_HALF_YEARLY",
+    "annual": "RAZORPAY_PLAN_ANNUAL",
+}
+
+PLAN_TOTAL_COUNT = {
+    "monthly": 12,      # 12 months = 1 year
+    "quarterly": 4,     # 4 quarters = 1 year
+    "half_yearly": 2,   # 2 half-years = 1 year
+    "annual": 1,        # 1 year
+}
 
 
 def _placeholder_plans() -> bool:
-    p = os.environ.get("RAZORPAY_PLAN_MONTHLY", "")
-    return not p or p.startswith("plan_PLACEHOLDER")
+    for env_key in PLAN_ENV_MAP.values():
+        p = os.environ.get(env_key, "")
+        if not p or p.startswith("plan_PLACEHOLDER"):
+            return True
+    return False
 
 
 async def create_subscription(plan: str, amount_rupees: int, customer: dict) -> dict:
@@ -42,7 +72,10 @@ async def create_subscription(plan: str, amount_rupees: int, customer: dict) -> 
     rz_key = os.environ.get("RAZORPAY_KEY_ID")
     rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
 
-    plan_env_key = "RAZORPAY_PLAN_MONTHLY" if plan == "monthly" else "RAZORPAY_PLAN_QUARTERLY"
+    plan_env_key = PLAN_ENV_MAP.get(plan)
+    if not plan_env_key:
+        return {"subscription_id": "", "key_id": "", "plan_id": "", "short_url": "",
+                "status": "invalid_plan", "mode": "stub"}
     plan_id = os.environ.get(plan_env_key, "")
 
     if not rz_key or not rz_secret:
@@ -50,7 +83,6 @@ async def create_subscription(plan: str, amount_rupees: int, customer: dict) -> 
                 "status": "razorpay_not_configured", "mode": "stub"}
 
     if _placeholder_plans():
-        # Architecture ready, plans not yet created in Razorpay dashboard.
         return {
             "subscription_id": f"sub_PENDING_{plan}_{customer.get('email', '')[:8]}",
             "key_id": rz_key,
@@ -58,7 +90,7 @@ async def create_subscription(plan: str, amount_rupees: int, customer: dict) -> 
             "short_url": "",
             "status": "placeholder_plan",
             "mode": "stub",
-            "note": "Create real plans in Razorpay dashboard, then set RAZORPAY_PLAN_MONTHLY / RAZORPAY_PLAN_QUARTERLY in .env",
+            "note": "Create real plans in Razorpay dashboard, then set RAZORPAY_PLAN_MONTHLY etc. in .env",
         }
 
     try:
@@ -66,7 +98,7 @@ async def create_subscription(plan: str, amount_rupees: int, customer: dict) -> 
         cli = razorpay.Client(auth=(rz_key, rz_secret))
         sub = cli.subscription.create({
             "plan_id": plan_id,
-            "total_count": 12 if plan == "monthly" else 4,  # 1-year horizon
+            "total_count": PLAN_TOTAL_COUNT.get(plan, 12),
             "customer_notify": 1,
             "notes": {
                 "donor_name": customer.get("name", ""),

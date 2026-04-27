@@ -133,8 +133,7 @@ class DeleteUserInput(BaseModel):
     reason: str
 
 class SubscriptionInput(BaseModel):
-    plan: str  # "monthly" | "quarterly"
-    amount: int  # rupees per cycle
+    plan: str  # "monthly" | "quarterly" | "half_yearly" | "annual"
     name: str
     email: str
     phone: str
