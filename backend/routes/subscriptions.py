@@ -23,6 +23,7 @@ from models.schemas import SubscriptionInput
 from utils.auth import get_current_user, require_admin
 from utils.activity import log_activity
 from utils.razorpay_subs import create_subscription, cancel_subscription, verify_webhook_signature
+from utils.patron import promote_if_qualified, list_patrons, recompute_all, get_patron_summary
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -132,4 +133,55 @@ async def subscription_webhook(request: Request):
                 "subscription_id": sub_id,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
+            # Auto-promote to Heroic Patron if threshold reached
+            promo = await promote_if_qualified(sub_doc["email"])
+            if promo.get("promoted"):
+                await log_activity("heroic_patron_promoted", "user", sub_doc["email"], "system",
+                                   f"charges={promo['charge_count']} total=₹{promo['total_amount']}", "")
     return {"status": "ok", "verified": True, "event": event}
+
+
+# ── Heroic Patron — public + admin endpoints ──
+@router.get("/heroic-patrons")
+async def public_list_patrons(limit: int = 50):
+    """Public Wall of Fame patron list — surfaced on /wall-of-fame."""
+    return await list_patrons(limit)
+
+
+@router.get("/admin/patrons/summary/{email}")
+async def admin_patron_summary(email: str, admin: dict = Depends(require_admin)):
+    return await get_patron_summary(email)
+
+
+@router.post("/admin/patrons/recompute")
+async def admin_recompute_patrons(admin: dict = Depends(require_admin)):
+    result = await recompute_all()
+    await log_activity("patron_recompute", "system", "", admin["email"],
+                       f"checked={result['checked']} promoted={result['promoted']}", "")
+    return {"message": f"Recomputed patrons. Checked {result['checked']} subscribers, promoted {result['promoted']}.", **result}
+
+
+@router.post("/admin/subscriptions/{sub_id}/simulate-charge")
+async def admin_simulate_charge(sub_id: str, admin: dict = Depends(require_admin)):
+    """Manually record a successful subscription charge — useful while Razorpay
+    plans are still placeholders. Mirrors the webhook side-effects."""
+    sub = await db.subscriptions.find_one({"id": sub_id})
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    await db.donations.insert_one({
+        "id": str(uuid.uuid4()),
+        "name": sub.get("name", ""), "email": sub.get("email", ""),
+        "phone": sub.get("phone", ""), "amount": sub.get("amount", 0),
+        "pan_number": sub.get("pan_number", ""), "aadhaar_number": "",
+        "address": sub.get("address", ""),
+        "message": f"Simulated recurring {sub.get('plan', '')} charge (admin-triggered)",
+        "status": "confirmed",
+        "razorpay_payment_id": f"pay_SIM_{uuid.uuid4().hex[:12]}",
+        "subscription_id": sub.get("razorpay_subscription_id", sub_id),
+        "simulated": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    promo = await promote_if_qualified(sub["email"])
+    await log_activity("subscription_charge_simulated", "subscription", sub_id, admin["email"],
+                       f"email={sub['email']} amount={sub.get('amount', 0)} promoted={promo.get('promoted', False)}", "")
+    return {"message": "Charge simulated.", "patron": promo}

@@ -1,0 +1,50 @@
+{
+  "summary": "Heroic Patron tier — all 12 backend tests pass and frontend integration verified end-to-end. Wall of Fame heroic-patrons-section renders 2 patron cards with HEROIC PATRON badge, Monthly Sustainer label, charge count 6, ₹3,000 total. No duplication into the regular fame grid. Admin Dashboard Patrons tab present with admin-patrons panel, recompute-patrons-btn (toast: 'Checked 4 subscribers, promoted 2.'), and per-subscription simulate-charge-{id} buttons that fire promotion toasts.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend GET /api/heroic-patrons -> 200 list, all entries tier=heroic_patron, sorted desc by patron_charge_count, no _id leakage",
+    "Backend POST /api/admin/subscriptions/{id}/simulate-charge requires admin (401/403 without auth)",
+    "Backend POST /api/admin/subscriptions/{id}/simulate-charge -> 404 for unknown sub",
+    "Backend: 6 simulate-charges on a fresh subscription -> first 5 promoted=False, 6th promoted=True with charge_count=6, plan='monthly', total_amount=3000",
+    "Backend GET /api/admin/patrons/summary/{email} returns charge_count>=6, qualified=true, plan=monthly, total_amount>=3000 after 6 charges",
+    "Backend GET /api/admin/patrons/summary/{email} requires admin",
+    "Backend GET /api/admin/patrons/summary/{unknown_email} -> 200 with charge_count=0, qualified=false (graceful)",
+    "Backend POST /api/admin/patrons/recompute requires admin",
+    "Backend POST /api/admin/patrons/recompute -> 200 with {checked, promoted, threshold:6}",
+    "Backend: Public /api/heroic-patrons reflects newly promoted user (email lowercased, tier=heroic_patron, patron_charge_count=6, patron_plan=monthly)",
+    "Backend POST /api/subscriptions/webhook with subscription.charged + bad signature -> 200 {verified:false, status:received} (no crash, code path safe)",
+    "Frontend /wall-of-fame: heroic-patrons-section visible with 2 patron-card-{email} entries; HEROIC PATRON badge, Monthly Sustainer label, 6 contributions, ₹3,000 each",
+    "Frontend /wall-of-fame: regular fame grid does NOT duplicate patrons (patrons filtered out via tier!=heroic_patron)",
+    "Frontend /dashboard: Patrons tab [data-testid=tab-patrons] activates [data-testid=admin-patrons] panel with [data-testid=recompute-patrons-btn]",
+    "Frontend Recompute click -> toast 'Recomputed patrons. Checked 4 subscribers, promoted 2.'",
+    "Frontend Simulate-Charge click -> toast '🎉 Promoted to Heroic Patron!' (existing already-qualified sub) and counter updates"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_heroic_patron.py",
+    "/app/test_reports/pytest/pytest_heroic_patron.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "utils/patron.py:get_patron_summary lowercases email but if user signup ever stored mixed-case email this would silently fail to find the user (returns reason='user_not_found' but charge_count is still computed). routes/auth.py register already lowercases on insert, so fine in practice — but worth a unit-level guard or a one-time migration to ensure all db.users emails are lowercased.",
+    "routes/subscriptions.py:simulate_charge writes subscription_id = sub.razorpay_subscription_id OR sub.id (fallback). For stub mode the razorpay_subscription_id is 'sub_PENDING_*' which is fine for counting via {$exists:true,$ne:''}. Just note that count_subscription_charges in utils/patron.py only filters by email (not subscription id), so charges across multiple subs of the same email all count toward the 6 threshold — confirm this is the intended product semantics (probably yes; user-level patron tier).",
+    "routes/subscriptions.py:webhook persists payload even on bad signature — good for forensics, returns 200 to avoid Razorpay retry storms. Fine.",
+    "Frontend Dashboard.js handleSimulateCharge fires fetchData() after each click — a little wasteful when running 6 in a row. Functional, just not optimal. Not a blocker.",
+    "patron_card text says 'Heroic Patron with 6 monthly contributions.' — pluralization is fine; for 1 charge (impossible at threshold=6 but for future tunable threshold) it would say '1 monthly contributions'. Cosmetic only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_heroic_patron.py (NEW)",
+    "/app/test_reports/pytest/pytest_heroic_patron.xml (NEW)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% — all flows green"},
+  "test_credentials": {"admin": {"email": "admin@heroichifi.org", "password": "HHF@admin2024"}},
+  "seed_data_creation": "Created 1 test user (test_patron_<uuid>@example.com, role=member) inserted directly via motor (signup requires OTP), and 1 monthly subscription (₹500). Then ran 6 simulate-charge calls -> user is now a Heroic Patron in db.users.badges and db.wall_of_fame. After this run, the public /api/heroic-patrons returns 2 entries (admin@heroichifi.org from previous iteration and the new test patron). DB grew by 1 user + 1 subscription + 6 donations + 1 wall_of_fame entry per run; idempotent across re-runs because uuid emails are unique each time but the assertions don't depend on uniqueness.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Heroic Patron flow is fully wired end-to-end. Tests in /app/backend/tests/test_heroic_patron.py are stable and use a direct-DB seed (motor.AsyncIOMotorClient via config.db) to bypass OTP for the user fixture. Each pytest run inserts a fresh test_patron_<uuid> user + 1 sub + 6 donations + a wall_of_fame entry — DB will accumulate; harmless but cleanup script could prune emails matching ^test_patron_ if storage matters. PATRON_THRESHOLD=6 lives in utils/patron.py. Webhook signature is intentionally invalid in tests because RAZORPAY_WEBHOOK_SECRET is a placeholder — verified:false path is the one exercised. The Wall of Fame already has admin@heroichifi.org pre-existing as a Heroic Patron from prior manual testing per the review request — that's expected.",
+  "rca_of_the_issue": "No bugs surfaced. One self-inflicted test bug found and fixed during writing: my test fixture seeded a user with email 'TEST_patron_<uuid>@example.com' (capitalised) but utils/patron.py:promote_if_qualified lowercases the lookup, so the user wasn't found. Fixed by lowercasing the seed email — matches what /api/auth/register does in production code. Lesson: any direct-DB seed must mirror the lower().strip() normalisation that the auth route applies."
+}

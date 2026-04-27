@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { motion } from "framer-motion";
-import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, PauseCircle, PlayCircle, Star, ArrowUpDown, CalendarDays, Activity, Plus, Mail, Bell, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, PauseCircle, PlayCircle, Star, ArrowUpDown, CalendarDays, Activity, Plus, Mail, Bell, FileText, ChevronDown, ChevronUp, Crown, Repeat } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_COLORS = { pending: "bg-amber-100 text-amber-800 border-amber-200", confirmed: "bg-green-100 text-green-800 border-green-200", approved: "bg-green-100 text-green-800 border-green-200", rejected: "bg-red-100 text-red-800 border-red-200", failed: "bg-red-100 text-red-800 border-red-200", open: "bg-blue-100 text-blue-800 border-blue-200", responded: "bg-cyan-100 text-cyan-800 border-cyan-200", closed: "bg-slate-100 text-slate-600 border-slate-200" };
@@ -107,6 +107,7 @@ export default function Dashboard() {
   const [promotionRequests, setPromotionRequests] = useState([]);
   const [eventReports, setEventReports] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
 
   const isAdmin = user?.role === "admin";
 
@@ -123,13 +124,14 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
         api.get("/drives"), api.get("/admin/activity-logs?limit=200"),
         api.get("/admin/events/pending"), api.get("/admin/email-blasts"),
         api.get("/admin/promote-requests"), api.get("/admin/events/reports"), api.get("/notifications"),
+        api.get("/admin/subscriptions"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -137,6 +139,7 @@ export default function Dashboard() {
       setDrives(drivesRes.data); setActivityLogs(logsRes.data); setPendingEvents(pendingRes.data);
       setEmailBlasts(blastsRes.data); setPromotionRequests(promoRes.data);
       setEventReports(reportsRes.data); setNotifications(notifRes.data);
+      setSubscriptions(subsRes.data);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -180,6 +183,10 @@ export default function Dashboard() {
   const [promoteEmail, setPromoteEmail] = useState("");
   const [promoteReason, setPromoteReason] = useState("");
   const handlePromote = async () => { if (!promoteEmail) return; try { const { data } = await api.post("/admin/promote-request", { target_email: promoteEmail, reason: promoteReason }); toast.success(data.message); setPromoteEmail(""); setPromoteReason(""); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+
+  // Heroic Patrons / Subscriptions
+  const handleRecomputePatrons = async () => { try { const { data } = await api.post("/admin/patrons/recompute"); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleSimulateCharge = async (subId) => { try { const { data } = await api.post(`/admin/subscriptions/${subId}/simulate-charge`); toast.success(`Charge simulated. ${data.patron?.promoted ? "🎉 Promoted to Heroic Patron!" : `Charges: ${data.patron?.charge_count || 0}/6`}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -263,6 +270,7 @@ export default function Dashboard() {
     { id: "messages", label: "Messages", icon: MessageCircle, count: messageThreads.length },
     { id: "tickets", label: "Tickets", icon: Ticket, count: tickets.length },
     { id: "promotions", label: "Admins", icon: Shield, count: pendingPromos.length },
+    { id: "patrons", label: "Patrons", icon: Crown, count: subscriptions.filter(s => s.status !== "cancelled").length },
     { id: "articles", label: "Articles", icon: FileText, count: eventReports.length },
     { id: "activity", label: "Log", icon: Activity },
   ];
@@ -430,6 +438,57 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between">
                         <div><p className="text-sm font-medium text-[#0D2847]">{r.target_name} <span className="text-xs text-slate-400">({r.target_email})</span></p><p className="text-xs text-slate-500">By: {r.requested_by} | Approvals: {r.approvals?.length || 0}/{r.required_approvals} {r.reason && `| "${r.reason}"`}</p></div>
                         <div className="flex items-center gap-2">{r.status === "pending" ? (<><Button size="sm" onClick={() => handlePromotionAction(r.id, "approve")} className="bg-green-600 text-white text-xs rounded-lg h-8" data-testid={`approve-promo-${r.id}`}><CheckCircle className="w-3 h-3 mr-1" />Approve</Button><Button size="sm" variant="outline" onClick={() => handlePromotionAction(r.id, "reject")} className="text-red-600 border-red-200 text-xs rounded-lg h-8" data-testid={`reject-promo-${r.id}`}><XCircle className="w-3 h-3 mr-1" />Reject</Button></>) : <StatusBadge status={r.status} />}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PATRONS / SUBSCRIPTIONS */}
+          {activeTab === "patrons" && (
+            <div data-testid="admin-patrons">
+              <div className="bg-gradient-to-br from-fuchsia-50 to-amber-50 rounded-2xl border border-fuchsia-200 shadow-sm p-6 mb-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                      <Crown className="w-5 h-5 text-fuchsia-600" /> Heroic Patrons
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">Recurring donors auto-promoted after 6 successful charges. Surfaced publicly on the Wall of Fame.</p>
+                  </div>
+                  <Button onClick={handleRecomputePatrons} className="bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-xl gap-2" data-testid="recompute-patrons-btn">
+                    <RefreshCw className="w-4 h-4" /> Recompute
+                  </Button>
+                </div>
+              </div>
+              <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">All Subscriptions ({subscriptions.length})</h3>
+              {subscriptions.length === 0 ? (
+                <p className="text-center text-slate-400 py-12">No recurring subscriptions yet. Donors can opt-in from the Donate page.</p>
+              ) : (
+                <div className="space-y-2">
+                  {subscriptions.map(s => (
+                    <div key={s.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`subscription-${s.id}`}>
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[#0D2847]">
+                            {s.name} <span className="text-xs text-slate-400">({s.email})</span>
+                            {s.status === "cancelled" && <span className="text-[10px] text-red-500 ml-2">[CANCELLED]</span>}
+                          </p>
+                          <p className="text-xs text-slate-500 flex flex-wrap items-center gap-3 mt-1">
+                            <span className="inline-flex items-center gap-1"><Repeat className="w-3 h-3" /> {s.plan}</span>
+                            <span><IndianRupee className="w-3 h-3 inline" />{s.amount?.toLocaleString("en-IN")}</span>
+                            <span className={`px-2 py-0.5 rounded-full border font-medium text-[10px] ${s.mode === "live" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                              {s.mode === "live" ? "LIVE" : "STUB"}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{new Date(s.created_at).toLocaleDateString("en-IN")}</span>
+                          </p>
+                        </div>
+                        {s.status !== "cancelled" && (
+                          <Button size="sm" onClick={() => handleSimulateCharge(s.id)} className="bg-amber-500 hover:bg-amber-600 text-white text-xs rounded-lg h-8 gap-1" data-testid={`simulate-charge-${s.id}`}>
+                            <Plus className="w-3 h-3" /> Simulate Charge
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
