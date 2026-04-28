@@ -16,9 +16,18 @@ router = APIRouter(prefix="/api")
 
 @router.post("/donations/create-order")
 async def create_razorpay_order(data: DonationInput, request: Request, user: dict = Depends(get_current_user)):
+    # Razorpay charges ~2% + 18% GST on the fee = effective 2.36%. We round up
+    # to the next rupee so the foundation always nets the full pledge.
+    import math
+    fee_covered = math.ceil(data.amount * 0.0236) if data.cover_fee else 0
+    gross_amount = data.amount + fee_covered
     doc = {
         "id": str(uuid.uuid4()), "name": data.name, "email": data.email.lower().strip(),
-        "phone": data.phone, "amount": data.amount, "pan_number": data.pan_number,
+        "phone": data.phone,
+        "amount": data.amount,           # the donor's pledge — what HHF receives, what 80G claims
+        "fee_covered": fee_covered,      # the donor's voluntary top-up to absorb Razorpay's fee
+        "gross_amount": gross_amount,    # the actual amount Razorpay charges
+        "pan_number": data.pan_number,
         "aadhaar_number": data.aadhaar_number or "", "address": data.address or "",
         "message": data.message or "", "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -32,12 +41,13 @@ async def create_razorpay_order(data: DonationInput, request: Request, user: dic
         return {"donation": doc, "message": "Donation recorded. Razorpay keys not configured yet."}
     import razorpay
     rz_client = razorpay.Client(auth=(rz_key, rz_secret))
-    order = rz_client.order.create(data={"amount": data.amount * 100, "currency": "INR", "receipt": doc["id"]})
+    order = rz_client.order.create(data={"amount": gross_amount * 100, "currency": "INR", "receipt": doc["id"]})
     doc["razorpay_order_id"] = order["id"]
     await db.donations.insert_one(doc)
     doc.pop("_id", None)
-    await log_activity("razorpay_order_created", "donation", doc["id"], data.email, f"Amount: {data.amount}", request.client.host if request.client else "")
-    return {"donation": doc, "razorpay_order_id": order["id"], "razorpay_key": rz_key, "amount": data.amount * 100, "currency": "INR"}
+    note = f"Pledge: {data.amount}, gross charged: {gross_amount} (fee absorbed: {fee_covered})"
+    await log_activity("razorpay_order_created", "donation", doc["id"], data.email, note, request.client.host if request.client else "")
+    return {"donation": doc, "razorpay_order_id": order["id"], "razorpay_key": rz_key, "amount": gross_amount * 100, "currency": "INR"}
 
 
 @router.post("/donations/verify-payment")

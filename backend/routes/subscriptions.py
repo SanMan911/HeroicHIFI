@@ -35,6 +35,7 @@ router = APIRouter(prefix="/api")
 async def subscription_create(data: SubscriptionInput, request: Request, user: dict = Depends(get_current_user)):
     if data.plan in PLAN_AMOUNTS:
         amount = PLAN_AMOUNTS[data.plan]  # fixed by plan
+        fee_covered = 0
     elif data.plan.startswith("custom_"):
         custom_interval = data.plan.split("_", 1)[1]
         if custom_interval not in {"monthly", "quarterly", "half_yearly", "annual"}:
@@ -44,6 +45,10 @@ async def subscription_create(data: SubscriptionInput, request: Request, user: d
         if data.custom_amount > 1000000:
             raise HTTPException(status_code=400, detail="Custom recurring amount cannot exceed \u20B9 10,00,000 per cycle.")
         amount = int(data.custom_amount)
+        # If donor opts to cover fees, build the upgraded amount into the dynamic plan
+        import math
+        fee_covered = math.ceil(amount * 0.0236) if data.cover_fee else 0
+        amount += fee_covered  # the plan & subscription will be created with the gross amount
     else:
         raise HTTPException(status_code=400, detail=f"Plan must be one of: {', '.join(PLAN_AMOUNTS.keys())} or custom_<interval>.")
 

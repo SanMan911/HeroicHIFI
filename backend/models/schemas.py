@@ -39,6 +39,7 @@ class DonationInput(BaseModel):
     address: Optional[str] = None
     message: Optional[str] = None
     otp_token: Optional[str] = None
+    cover_fee: Optional[bool] = False  # Donor opts to cover Razorpay's transaction fee
 
 class VolunteerInput(BaseModel):
     name: str
@@ -173,6 +174,7 @@ class SubscriptionInput(BaseModel):
     pan_number: str
     address: Optional[str] = ""
     custom_amount: Optional[int] = None  # rupees — required when plan starts with "custom_"
+    cover_fee: Optional[bool] = False  # Donor opts to cover Razorpay's transaction fee (custom plans only)
 
 class PANVerifyInput(BaseModel):
     pan: str

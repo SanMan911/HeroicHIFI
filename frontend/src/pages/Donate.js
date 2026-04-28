@@ -41,6 +41,12 @@ export default function Donate() {
   const [customRecurring, setCustomRecurring] = useState(false);
   const [customSubAmount, setCustomSubAmount] = useState(500);
   const [customInterval, setCustomInterval] = useState("monthly");
+  const [coverFee, setCoverFee] = useState(false);
+
+  // Razorpay charges roughly 2% + 18% GST = effective 2.36%. We round up.
+  const computeFee = amt => (coverFee ? Math.ceil((Number(amt) || 0) * 0.0236) : 0);
+  const oneTimeFee = computeFee(form.amount || 0);
+  const subFee = computeFee(customSubAmount || 0);
   const RECURRING_PLANS = [
     { key: "monthly", amount: 100, en: "Monthly", hi: "मासिक", cycles: 12, sub: "₹100 / month" },
     { key: "quarterly", amount: 275, en: "Quarterly", hi: "त्रैमासिक", cycles: 4, sub: "₹275 every 3 months" },
@@ -108,7 +114,7 @@ export default function Donate() {
           plan: customRecurring ? `custom_${customInterval}` : recurringPlan,
           name: form.name, email: form.email, phone: form.phone,
           pan_number: form.pan_number, address: form.address || "",
-          ...(customRecurring ? { custom_amount: parseInt(customSubAmount) || 0 } : {}),
+          ...(customRecurring ? { custom_amount: parseInt(customSubAmount) || 0, cover_fee: coverFee } : {}),
         };
         if (customRecurring && (!subPayload.custom_amount || subPayload.custom_amount < 100)) {
           toast.error("Custom recurring amount must be at least \u20B9 100 per cycle.");
@@ -125,7 +131,7 @@ export default function Donate() {
         setSubmitting(false);
         return;
       }
-      const payload = { ...form, amount: parseInt(form.amount, 10), otp_token: token || otpToken || undefined };
+      const payload = { ...form, amount: parseInt(form.amount, 10), otp_token: token || otpToken || undefined, cover_fee: coverFee };
       const { data } = await api.post("/donations/create-order", payload);
       if (data.razorpay_order_id) {
         const loaded = await loadRazorpayScript();
@@ -313,6 +319,36 @@ export default function Donate() {
               </div>
               {customAmount && <Input name="amount" type="number" placeholder={t.amount} value={form.amount} onChange={handleChange} className="rounded-xl" data-testid="donate-custom-amount-input" />}
             </div>
+
+            {/* Cover Razorpay transaction fee — donor opts to top up so HHF nets the full pledge */}
+            <label className={`flex items-start gap-3 rounded-xl border-2 p-3 cursor-pointer transition-all ${coverFee ? "border-emerald-500 bg-emerald-50" : "border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/60"}`} data-testid="cover-fee-section">
+              <input type="checkbox" checked={coverFee} onChange={e => setCoverFee(e.target.checked)} className="mt-1 w-4 h-4 accent-emerald-600" data-testid="cover-fee-toggle" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-emerald-900">
+                  {lang === "hi" ? "लेन-देन शुल्क मैं कवर करना चाहूंगा (Razorpay 2.36%)" : "Cover the Razorpay transaction fee (~2.36%)"}
+                </p>
+                <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                  {lang === "hi"
+                    ? "यदि आप टॉगल करते हैं, तो Razorpay की 2% + GST फीस आप वहन करेंगे ताकि Heroic HIFI को आपकी पूरी प्रतिज्ञा मिले।"
+                    : "Razorpay deducts ~2.36% from every donation. Toggle this on to absorb that fee yourself so Heroic HIFI Foundation receives your full pledge. Your 80G receipt still reflects only the pledged amount you donated."}
+                </p>
+                {coverFee && !recurring && form.amount && (
+                  <p className="text-xs text-emerald-700 mt-2 font-medium" data-testid="onetime-fee-preview">
+                    Pledge {"\u20B9"} {Number(form.amount).toLocaleString("en-IN")} + Fee {"\u20B9"} {oneTimeFee.toLocaleString("en-IN")} = <strong>You pay {"\u20B9"} {(Number(form.amount) + oneTimeFee).toLocaleString("en-IN")}</strong>
+                  </p>
+                )}
+                {coverFee && recurring && customRecurring && (
+                  <p className="text-xs text-emerald-700 mt-2 font-medium" data-testid="custom-sub-fee-preview">
+                    Pledge {"\u20B9"} {Number(customSubAmount).toLocaleString("en-IN")} + Fee {"\u20B9"} {subFee.toLocaleString("en-IN")} per cycle = <strong>You're charged {"\u20B9"} {(Number(customSubAmount) + subFee).toLocaleString("en-IN")} every {customInterval.replace("_", " ")}</strong>
+                  </p>
+                )}
+                {coverFee && recurring && !customRecurring && (
+                  <p className="text-[11px] text-amber-700 mt-2">
+                    Note: fee-cover currently applies to one-time donations and <em>custom</em> recurring amounts only — fixed plan amounts are pre-set in Razorpay.
+                  </p>
+                )}
+              </div>
+            </label>
 
             {/* Recurring Donation Toggle */}
             <div className={`rounded-xl border-2 p-4 transition-all ${recurring ? "border-[#FF7F00] bg-[#FF7F00]/5" : "border-sky-100 bg-white"}`} data-testid="recurring-toggle-section">
