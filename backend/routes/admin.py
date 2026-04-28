@@ -172,10 +172,17 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
         updates["merchandise_issued"] = data.merchandise_issued
     if data.admin_comments is not None:
         updates["admin_comments"] = data.admin_comments
-    if data.designation is not None:
-        updates["designation"] = data.designation.strip()[:80]
-    if data.leadership_bio is not None:
-        updates["leadership_bio"] = data.leadership_bio.strip()[:280]
+    if data.designation is not None or data.leadership_bio is not None:
+        if not is_super_admin(admin):
+            raise HTTPException(status_code=403, detail="Only the Master Admin can assign or remove an office-bearer post.")
+        if data.designation is not None:
+            from data.office_posts import OFFICE_POSTS_SET
+            cleaned = data.designation.strip()
+            if cleaned and cleaned not in OFFICE_POSTS_SET:
+                raise HTTPException(status_code=400, detail=f"'{cleaned}' is not a recognised office-bearer post.")
+            updates["designation"] = cleaned
+        if data.leadership_bio is not None:
+            updates["leadership_bio"] = data.leadership_bio.strip()[:280]
     if data.status is not None:
         updates["status"] = data.status
         if data.status == "suspended":

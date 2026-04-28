@@ -9,6 +9,7 @@ from models.schemas import (
 )
 from utils.auth import get_current_user, require_admin
 from utils.activity import log_activity
+from data.office_posts import OFFICE_POSTS
 
 router = APIRouter(prefix="/api")
 
@@ -134,23 +135,30 @@ async def get_wall_of_fame():
 
 
 # ── Leadership / Office Bearers (public) ──
+@router.get("/office-posts")
+async def get_office_posts():
+    """Catalog of valid office-bearer post titles (used by the admin UI)."""
+    return OFFICE_POSTS
+
+
 @router.get("/leadership")
 async def get_leadership():
-    """Public list of office bearers — admins who have a ``designation`` set.
-    Master Admin is included but never explicitly labelled as Master; only the
-    human-readable designation is surfaced. Order: sort_order ascending, then
-    by creation date (founders & older members first)."""
+    """Public list of office bearers — ANY user (admin, volunteer, member) who
+    has an ``office-bearer post`` assigned to them by the Master Admin. Order:
+    by position in the canonical ``OFFICE_POSTS`` list (Founder first), then by
+    creation date."""
     cursor = db.users.find(
-        {"role": "admin", "designation": {"$exists": True, "$ne": ""}},
+        {"designation": {"$exists": True, "$ne": ""}},
         {
             "_id": 0, "password_hash": 0, "pan_number": 0,
             "aadhaar_number": 0, "address": 0, "phone": 0,
             "admin_comments": 0, "suspension_reason": 0,
         },
     )
-    rows = await cursor.to_list(50)
+    rows = await cursor.to_list(100)
+    rank = {p: i for i, p in enumerate(OFFICE_POSTS)}
     def _sort_key(u):
-        return (u.get("sort_order") or 999, u.get("created_at") or "")
+        return (rank.get(u.get("designation", ""), 999), u.get("created_at") or "")
     rows.sort(key=_sort_key)
     return [
         {
@@ -159,6 +167,7 @@ async def get_leadership():
             "bio": u.get("leadership_bio", ""),
             "email": u.get("email", ""),
             "profile_pic_path": u.get("profile_pic_path", ""),
+            "role": u.get("role", ""),
         }
         for u in rows
     ]

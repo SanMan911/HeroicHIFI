@@ -2,7 +2,7 @@ import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { ORG_INFO, MEDIA } from "../data/missions";
 import { motion } from "framer-motion";
-import { Building2, Mail, Phone, MapPin, Eye, Compass, User } from "lucide-react";
+import { Building2, Mail, Phone, MapPin, Eye, Compass, User, CalendarClock } from "lucide-react";
 import { useEffect, useState } from "react";
 import api from "../lib/api";
 
@@ -77,7 +77,7 @@ export default function About() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="leadership-grid">
               {leaders.map(l => (
-                <article key={l.email} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-6 hover:shadow-md transition-shadow" data-testid={`leader-card-${l.email}`}>
+                <article key={l.email} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-6 hover:shadow-md transition-shadow flex flex-col" data-testid={`leader-card-${l.email}`}>
                   <div className="flex items-start gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-50 border border-amber-200 flex items-center justify-center overflow-hidden shrink-0">
                       {l.profile_pic_path
@@ -88,10 +88,19 @@ export default function About() {
                       <p className="text-base font-semibold text-[#0D2847] truncate">{l.name}</p>
                       {l.designation && <p className="text-xs font-medium text-amber-800 mt-0.5">{l.designation}</p>}
                       {l.bio && <p className="text-sm text-stone-600 mt-2 leading-relaxed">{l.bio}</p>}
-                      <a href={`mailto:${l.email}`} className="inline-flex items-center gap-1 mt-3 text-xs text-[#1E56A0] hover:underline">
-                        <Mail className="w-3 h-3" /> {l.email}
-                      </a>
                     </div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-amber-100/70 flex items-center justify-between gap-2">
+                    <a href={`mailto:${l.email}`} className="inline-flex items-center gap-1 text-xs text-[#1E56A0] hover:underline truncate" data-testid={`leader-email-${l.email}`}>
+                      <Mail className="w-3 h-3 shrink-0" /> <span className="truncate">{l.email}</span>
+                    </a>
+                    <a
+                      href={`mailto:${l.email}?subject=${encodeURIComponent(`Meeting request with ${l.designation || "Mission Steward"} — Heroic HIFI Foundation`)}&body=${encodeURIComponent(`Hello ${l.name},\n\nI came across your profile on the Heroic HIFI Foundation website and would like to schedule a short 1:1 conversation regarding:\n\n[Please mention partnership, volunteering, mission queries, etc.]\n\nA few time slots that work for me:\n- \n- \n\nThank you,\n`)}`}
+                      className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-3 py-1.5 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                      data-testid={`leader-schedule-${l.email}`}
+                    >
+                      <CalendarClock className="w-3 h-3" /> Schedule 1:1
+                    </a>
                   </div>
                 </article>
               ))}
