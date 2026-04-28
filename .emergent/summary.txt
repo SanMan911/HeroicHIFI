@@ -1,61 +1,58 @@
-<analysis>**original_problem_statement:** 
+<analysis>**original_problem_statement**: 
 Build a website for Heroic HIFI Foundation, a Section 8 Non-Profit Organization in India. The application requires pages for donations, volunteer onboarding, missions, admin panel, mandatory PAN details for donations, auto-generation of 80G tax receipt PDFs, OTP-based login, a community messaging system, manual Hindi/English translations, a volunteer achievement/badge system, user profiles with DP upload, a Wall of Fame, a grievance ticket system, password reset via email, and deployment configurations for self-hosting.
-PRODUCT REQUIREMENTS: Full-stack app with custom UI matching NGO logo. Dual Language purely via manual text mapping. Live Razorpay subscriptions, separated Provisional vs Annual 80G receipts, robust Master Admin controls, and Two-Admin approval gates for critical actions.
+PRODUCT REQUIREMENTS: Full-stack app with custom UI matching NGO logo. Dual Language purely via manual text mapping. Live Razorpay subscriptions, separated Provisional vs Annual 80G receipts, robust Master Admin controls, Two-Admin approval gates for critical actions, Event/Drive proposals, Office Bearer histories, and Top Donor tracking.
 
 **User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
 **what currently exists?** 
-A fully functional React + FastAPI application with a heavily modularized backend. Features include OTP login (Resend), a unified roster, Razorpay donations (LIVE keys active, 4 subscription plans), Razorpay Webhooks, an auto-promotion Heroic Patron system, auto PDF generation (split into immediate Provisional receipts and year-end consolidated 80G certificates), a Two-Admin approval gate for mass 80G email dispatch, a hidden Master Admin role with override powers, and a Webhook Health Dashboard.
+A fully functional React + FastAPI application with a heavily modularized backend. Features include OTP login (Resend), a unified roster, Razorpay donations (LIVE keys active, fixed & custom subscription plans), Razorpay Webhooks, an auto-promotion Heroic Patron system, Top Donor tracking, automatic provisional/annual 80G PDFs (rendering ₹ symbol via custom font), a Master Admin role with override powers, Unanimous multi-admin voting for promotions/removals, Office Bearer tenure tracking with AGM Report generation, Event proposal workflows (Proposer → Seconder → Treasurer), and a Treasury Snapshot. 
 
 **Last working item**:
-- Last item agent was working: Hardening the Provisional Receipt PDF (adding bold NOT A TAX PAPER disclaimers and gating the PDF download/email strictly behind a  payment status), and auditing the Admin Delete User and Forgot Password flows to prove to the user they already exist and function perfectly. The agent also spent time explaining the drift between the Preview Environment and the Production Deployment (Render/Vercel) to the user.
-- Status: USER VERIFICATION PENDING
-- Agent Testing Done: Y
-- Which testing method agent to use?: NA (Testing is already done via manual bash and screenshot validation for the latest changes;  was heavily used for the major features prior).
+- Last item agent was working: Implementing warm copy to acknowledge donors who opt to Cover transaction fees. The agent modified  to add a thank-you note in the provisional receipt email for the extra fee covered (e.g., plus ₹24 to cover transaction fees), while strictly keeping the 80G certificate's deductible amount to the pledged base donation. The agent still needs to wire this display logic into the donor's My Donations (Profile/Dashboard) page on the frontend.
+- Status: IN PROGRESS
+- Agent Testing Done: N
+- Which testing method agent to use?: Frontend testing agent/screenshot tool for UI changes; curl for backend email trigger.
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-Issue 1: Resolve Production vs. Preview Deployment Drift
-- Attempted fixes: The agent updated all code in the preview pod and verified it works. Explained to the user that they must push the code to GitHub and update their Render Environment Variables (Razorpay live keys, Webhook secrets, Resend keys) for the live website to reflect the changes.
-- Next debug checklist: Ask the user if they successfully pushed to GitHub and updated the Render dashboard.
-- Why fix this issue and what will be achieved with the fix?: The user believes features are broken/missing because they are viewing their live Vercel/Render site, which is running old code and old test environment variables.
-- Status: USER VERIFICATION PENDING
+Issue 1: Display Covered Fee in My Donations Frontend Tab
+- Attempted fixes: Backend email logic was just updated. Frontend is untouched.
+- Next debug checklist: Update the user's Profile/Dashboard My Donations list to gracefully indicate if they covered the transaction fee (using  or  vs  fields).
+- Why fix this issue and what will be achieved with the fix?: User explicitly requested this warm copy in the donor's personal dashboard to acknowledge their extra generosity.
+- Status: NOT STARTED
 - Is recurring issue?: N
-- Should Test frontend/backend/both after fix?: Both (Smoke test production once user confirms deployment)
+- Should Test frontend/backend/both after fix?: Frontend
 - Blocked on other issue: None
 
-Issue 2: Sandbox API Keys for PAN-Aadhaar Verification
-- Attempted fixes: The architecture is fully built using placeholder keys ().
-- Next debug checklist: Await the user to provide the live Sandbox.co.in API Key and Secret.
-- Why fix this issue and what will be achieved with the fix?: Activates real-time verification of Indian tax IDs.
-- Status: BLOCKED
-- Is recurring issue?: N
-- Should Test frontend/backend/both after fix?: Backend
-- Blocked on other issue: User needs to create a Sandbox account and provide keys.
-
 **In progress Task List**:
-None actively in progress. The agent just finished a massive batch of backend/frontend features and is waiting on the user to deploy them.
+Task 1: Test the updated Provisional Receipt Email
+- Where to resume:  was updated. Trigger a test donation with  = true and ensure the email logic fires without syntax or template errors.
+- What will be achieved with this?: Ensures the newly modified email template renders correctly and doesn't crash the donation confirmation webhook.
+- Status: TESTING PENDING
+- Should Test frontend/backend/both after fix?: Backend
 
 **Upcoming and Future Tasks**:
-- P0: Assist user with deploying the current preview state to their production environment (GitHub push + Render Env Variable sync).
-- P1: Add a Forgot Password micro-link to the global Navbar or 401-redirect messages (Agent suggested this at the very end of the session to improve UX).
-- P2: Swap Sandbox API placeholder keys with live keys (when user provides them).
-- P3: Export Data feature (Allow admins to download CSVs of the roster, donations, and activity logs).
+- P0: Complete the My Donations UI update for covered fees and test the email generation.
+- P1: Assist user with deploying the current preview state to their production environment (GitHub push + Render Env Variable sync, specifically generating a NEW  from the live dashboard and adding it to Render).
+- P2: Add Export Data feature (Allow admins to download CSVs of the roster, donations, and activity logs).
+- P3: Add a Forgot Password micro-link to the global Navbar or 401-redirect messages (from backlog).
 
 **Completed work in this session**:
-- Added Volunteer Specialization multi-select dropdown in Login.js (DONE)
-- Admin Suspend/Remove user feature with mandatory reasons and audit logging (DONE)
-- Volunteer specialization filter on Admin Roster (DONE)
-- Razorpay Subscriptions integration with 4 LIVE fixed plans (Monthly, Quarterly, Half-Yearly, Annual) (DONE)
-- Razorpay Webhook signature verification and Webhook Health Widget (DONE)
-- Heroic Patron auto-promotion system (promotes users after 6 recurring charges) & Wall of Fame UI (DONE)
-- Separation of Provisional Receipt (immediate) vs Consolidated 80G Certificate (Year-End) with bold disclaimers (DONE)
-- Annual 80G Dispatch Daemon and Two-Admin Approval Gate (DONE)
-- Master Admin role creation (Hidden from other admins, possesses override powers, bypasses gates) (DONE)
-- PDF Download Gating (Only confirmed payments can trigger a receipt download) (DONE)
+- Phone number sweep (replaced old number with 9060460224 everywhere) (DONE)
+- Guest donors added to unified Roster & Purge Donations endpoint created (DONE)
+- Added Indian Rupee (₹) symbol to 80G PDFs via embedded  font (DONE)
+- Office-Bearer posts (Chairman, Secretary, Treasurer, Assistant) with history & tenure tracking (DONE)
+- Unanimous Admin Voting for promotions/removals (DONE)
+- AGM Report PDF generation (DONE)
+- Inline Propose as Admin UI on Roster cards (DONE)
+- Auto Top Donor engine & Homepage Marquee (DONE)
+- Event Proposals tab & workflow (Proposer -> Seconder -> Treasurer) (DONE)
+- Treasury Snapshot widget (Confirmed YTD - Approved Event Budgets) (DONE)
+- Custom recurring amount & Cover Transaction Fee option in Donations (DONE)
+- Lazy archive for activity logs older than 7 days (DONE)
 
 **Earlier issues found/mentioned but not fixed**:
-None.
+None explicitly missed, but ensure  and  are refreshed when finishing the next tasks.
 
 **Known issue recurrence from previous fork**:
 - Issue recurrence in previous fork: NA
@@ -66,76 +63,77 @@ None.
 - 
 - 
 -  (auth.py, admin.py, donations.py, subscriptions.py, messages.py, profile.py, general.py, certificates.py)
--  (auth.py, email.py, storage.py, privacy.py, badges.py, activity.py, llm.py, razorpay_subs.py, sandbox.py, patron.py, year_end.py)
-- 
--  (Dashboard.js, Donate.js, WallOfFame.js, Login.js, etc.)
+-  (auth.py, email.py, storage.py, privacy.py, badges.py, activity.py, llm.py, razorpay_subs.py, sandbox.py, patron.py, year_end.py, top_donor.py)
+-  (office_posts.py)
+-  (Dashboard.js, Donate.js, Home.js, About.js, Login.js, etc.)
 
 **Key Technical Concepts**:
-React.js, FastAPI, MongoDB, ReportLab (PDFs), Resend (Emails), Razorpay Subscriptions API & Webhooks, Emergent Object Storage, Gemini 3 Flash.
+React.js, FastAPI, MongoDB, ReportLab (PDFs + custom TTF fonts), Resend (Emails), Razorpay Subscriptions API & Webhooks, Emergent Object Storage, Gemini 3 Flash.
 
 **key DB schema**:
 - : {email, name, role, is_super_admin, ...}
-- : {id, razorpay_order_id, razorpay_payment_id, status, plan, amount, ...}
-- : {id, razorpay_subscription_id, plan, charge_count, total_amount, ...}
-- : {id, event, verified, payload, received_at}
-- : {id, fy_label, status, created_by, approved_by, details}
-- : {deleted_by, reason, deleted_at, user_snapshot}
+- : {id, amount, gross_amount, fee_covered, razorpay_order_id, status, ...}
+- : {id, razorpay_subscription_id, plan, ...}
+- : {id, user_email, post, start_date, end_date, ...}
+-  (Events): {id, title, budget, status (proposed/seconded/approved), ...}
 
 **changes in tech stack**:
-- Added extensive new utility scripts to handle specific domain logic (, , , ).
-- Integrated Razorpay Webhook signature validation.
+- Integrated  font into ReportLab for Unicode currency support (₹).
+- Added complex multi-admin voting consensus logic.
 
 **All files of reference**:
--  (New core file for recurring payments and webhook health)
--  (Split logic for provisional vs tax certificates)
--  (Contains the new automated receipt dispatcher)
--  (Updated for 4 fixed subscription plans and hydration fixes)
--  (Contains Webhook widget, Annual 80G draft approval, Master Admin badge)
--  (Heroic Patrons section)
+-  (Currently being edited for warm copy)
+-  (Contains My Donations tab that needs updating)
+-  &  (Donation creation flows)
 
 **Areas that need refactoring**:
-None. The code is highly modularized and passes strict linting.
+None. Codebase is clean and passing strict linting.
 
 **key api endpoints**:
-- 
--  (Requires )
--  (Two-admin gated)
+-  (Supports  and )
+-  (Supports custom recurring logic)
 - 
 
 **Critical Info for New Agent**:
-- **Deployment Confusion:** The user was confused why features built in the preview pod weren't immediately visible on their live URL. The agent carefully explained the difference between the preview environment and their production Render/Vercel environments. Your primary initial goal should be ensuring they actually pushed to GitHub and updated their  variables on Render.
-- **Master Admin:**  is a Super-Admin (). They are dynamically hidden from roster views and activity logs accessed by regular admins, and they can bypass the 2-admin approval gates. Do not break this hiding logic.
-- **Razorpay is LIVE:** The  in the current workspace has been updated to use  keys. Do not revert to test keys.
-- **Receipt Logic:** Provisional receipts fire immediately upon a  status. Annual 80G certificates are strictly meant to be batch-dispatched by admins at the end of the Financial Year.
+- **80G Legality**: The backend correctly processes  by charging the gross amount to Razorpay but saving the *pledge* as the  to maintain 80G tax legality. Do not change the 80G PDF logic to use the gross amount; only use the warm copy to acknowledge the fee coverage.
+- **Webhook Secret**: The  in the  is for preview only. Remind the user to sync their live Render deployment with a real webhook secret generated from their Razorpay dashboard.
+- **Master Admin**:  is a Super-Admin (). They have override powers and bypass voting mechanics.
 
 **documents and test reports created in this job**:
--  (Continuously updated)
--  (Updated with secondary admin info)
--  through 
+-  
+- 
 
 **Last 10 User Messages and any pending HUMAN messages**:
-- *User*: Make the provisional receipt state it CANNOT be treated as a tax paper; make it downloadable only on payment confirmation. Fix Razorpay showing TEST mode. Fix Master admin only seeing 3 users. Ensure users can be deleted and have forgot password.
-- *Agent*: Realized the user is looking at their production site, not the preview. Code fixes applied to the preview for the Provisional PDF (gating + red disclaimer text). Showed user that Delete User and Forgot Password already exist and work perfectly via exhaustive bash tests. Gently instructed the user to push code to GitHub and update Render Env vars.
-- *Pending*: Wait for the user to respond on whether they successfully deployed to production.
+- *User*: Make it so the Top Donor badge is automatically awarded... celebrate them on homepage marquee. Nudge users to register.
+- *Agent*: Implemented Top Donor engine, marquee, and register nudge.
+- *User*: 1. What is webhook secret? 2. Add Office to registered admins only. 3. Purpose of queries? 4. Archive logs > 7 days. 5. Setup Event tab with proposer/seconder/treasurer approvals and budgets.
+- *Agent*: Answered questions, added Office Bearer constraints, Query email replies, Activity log archive, and full Event proposal workflow.
+- *User*: Suggestion: Add Treasury Snapshot widget to Events tab showing available headroom. Add custom recurring amount on Razorpay.
+- *Agent*: Built Treasury Snapshot and Custom Subscription logic.
+- *User*: Add option to Cover transaction fees (~2.4%). Provide webhook secret.
+- *Agent*: Built Cover Fee toggle and backend logic. Provided preview webhook secret with a warning.
+- *User*: Provide a warm copy in the receipt email and donor's My Donations page acknowledging the extra fee covered. Advise if certificate should be total or pledged.
+- *Agent*: Advised user that 80G certificates MUST only reflect the pledged amount. Started editing  to add the warm copy text.
+- *Pending*: Finish the email edit, update the Frontend Dashboard (My Donations view), and test.
 
 **Project Health Check**:
-Backend and Frontend are extremely healthy in the preview environment (passing 21/21 backend tests and 4/4 frontend tests in the final suite).
+Backend and Frontend are extremely healthy. (All python and JS linters passed in the last steps).
 
 **3rd Party Integrations**:
 - Resend (Emails) — requires User API Key (Live Key Active)
-- Razorpay (Payments & Webhooks) — requires User API Key (Live Key Active, Webhook Secret Active)
+- Razorpay (Payments & Webhooks) — requires User API Key (Live Key Active)
 - Emergent Object Storage (Image Uploads) — uses Emergent LLM Key
 - Gemini 3 Flash (AI Articles) — uses Emergent LLM Key
 
 **Testing status**:
-- Testing agent used after significant changes: YES ( through  all utilized the testing agent extensively).
+- Testing agent used after significant changes: NO (Main agent self-tested extensively via curl and screenshots)
 - Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: Handled automatically by testing agent.
-- Known regressions: None in the preview environment.
+- Test files created: None
+- Known regressions: None
 
 **Credentials to test flow**:
 - Master Admin: Email  / Password 
 - Regular Admin: Email  / Password 
 
 **What agent forgot to execute**:
-The agent proposed adding a quick Forgot Password micro-link to the global Navbar or 401-redirect screens right before finishing, but did not implement it yet. You can pick this up if the user agrees.</analysis>
+The agent modified  for the warm copy but didn't run tests on it, nor did they execute the requested changes for the My Donations frontend page to show the covered transaction fees.</analysis>

@@ -214,6 +214,8 @@ async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: s
     try:
         resend.api_key = api_key
         amount = donation.get("amount", 0)
+        fee_covered = int(donation.get("fee_covered", 0) or 0)
+        gross_amount = int(donation.get("gross_amount", amount) or amount)
         donation_id = donation.get("id", "")
         donor_name = donation.get("name", "")
         when_str = donation.get("created_at", "")[:10] or date.today().isoformat()
@@ -224,10 +226,20 @@ async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: s
         fy_start, fy_end, fy_label = fy_for_date(d)
         cert_send_date = date(fy_end.year, 4, 1).strftime("%d %B %Y")
         subject = (
-            f"Donation Acknowledgment — ₹{amount:,} (Provisional Receipt)"
+            f"Donation Acknowledgment — \u20B9{amount:,} (Provisional Receipt)"
             if label == "donation"
-            else f"Recurring Donation Acknowledgment — ₹{amount:,} (Provisional Receipt, {label})"
+            else f"Recurring Donation Acknowledgment — \u20B9{amount:,} (Provisional Receipt, {label})"
         )
+        # Warm copy ONLY when the donor voluntarily covered the fee
+        fee_paragraph = ""
+        if fee_covered > 0:
+            fee_paragraph = f"""
+                <div style="background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:12px;padding:12px 14px;margin:14px 0;">
+                    <p style="margin:0;font-size:13px;color:#065F46;line-height:1.55;">
+                        💚 You generously absorbed <strong>\u20B9{fee_covered:,}</strong> in Razorpay processing fees so the foundation receives the full <strong>\u20B9{amount:,}</strong> of your pledge. Your total payment was <strong>\u20B9{gross_amount:,}</strong> — thank you. <em>Note: only the donation portion (\u20B9{amount:,}) qualifies for an 80G deduction; the processing fee is a payment to Razorpay, not to the foundation.</em>
+                    </p>
+                </div>
+            """
         params = {
             "from": SENDER_EMAIL,
             "to": [email],

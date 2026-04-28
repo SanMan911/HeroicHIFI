@@ -13,7 +13,7 @@ import asyncio
 
 sys.path.insert(0, "/app/backend")
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hifi-donations-live.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hifi-volunteer-hub.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "admin@heroichifi.org"
 ADMIN_PASSWORD = "HHF@admin2024"
 
