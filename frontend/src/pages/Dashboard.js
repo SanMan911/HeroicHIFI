@@ -111,6 +111,7 @@ export default function Dashboard() {
   const [subscriptions, setSubscriptions] = useState([]);
   const [webhookHealth, setWebhookHealth] = useState(null);
   const [draftRows, setDraftRows] = useState([]);
+  const [officeHistory, setOfficeHistory] = useState([]);
 
   const isAdmin = user?.role === "admin";
 
@@ -127,7 +128,7 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
@@ -137,6 +138,7 @@ export default function Dashboard() {
         api.get("/admin/subscriptions"),
         api.get("/admin/webhook-health?limit=15"),
         api.get("/admin/annual-80g/drafts"),
+        api.get("/admin/office-bearer-history"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -147,6 +149,7 @@ export default function Dashboard() {
       setSubscriptions(subsRes.data);
       setWebhookHealth(hookRes.data);
       setDraftRows(draftsRes.data);
+      setOfficeHistory(obhRes.data);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -706,12 +709,53 @@ export default function Dashboard() {
 
           {/* ACTIVITY LOG */}
           {activeTab === "activity" && (
-            <div className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden" data-testid="admin-activity-log">
-              <div className="max-h-[70vh] overflow-y-auto">
-                {activityLogs.length === 0 ? <p className="text-center text-slate-400 py-12">No activity.</p> :
-                  <table className="w-full text-xs"><thead className="sticky top-0 bg-sky-50 border-b border-sky-100"><tr><th className="text-left p-3 text-slate-500 font-medium">Time</th><th className="text-left p-3 text-slate-500 font-medium">Action</th><th className="text-left p-3 text-slate-500 font-medium">User</th><th className="text-left p-3 text-slate-500 font-medium">Details</th></tr></thead>
-                    <tbody>{activityLogs.map((log, i) => (<tr key={log.id || i} className="border-b border-sky-50 hover:bg-sky-50/30"><td className="p-3 text-slate-400 whitespace-nowrap">{new Date(log.timestamp).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td><td className="p-3"><span className="px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100 font-medium">{log.action}</span></td><td className="p-3 text-slate-600">{log.user_email || "—"}</td><td className="p-3 text-slate-500 max-w-xs truncate">{log.details}</td></tr>))}</tbody>
-                  </table>}
+            <div className="space-y-6">
+              {/* Office-Bearer History */}
+              <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden" data-testid="office-bearer-history">
+                <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-amber-100/50 border-b border-amber-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Compass className="w-4 h-4 text-amber-700" />
+                    <p className="text-sm font-semibold text-amber-900">Office-Bearer History</p>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-amber-700 border border-amber-200">{officeHistory.length}</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700/70">Every Chairman / Secretary / Treasurer / Assistant handover — use at AGMs.</p>
+                </div>
+                <div className="max-h-[40vh] overflow-y-auto">
+                  {officeHistory.length === 0
+                    ? <p className="text-center text-slate-400 py-8 text-xs">No post changes yet.</p>
+                    : <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-amber-50/60 border-b border-amber-100">
+                          <tr>
+                            <th className="text-left p-3 text-amber-900 font-medium">When</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">Person</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">From</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">To</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">By</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {officeHistory.map((h, i) => (
+                            <tr key={h.id || i} className="border-b border-amber-50 hover:bg-amber-50/20" data-testid={`obh-row-${h.id || i}`}>
+                              <td className="p-3 text-slate-500 whitespace-nowrap">{new Date(h.changed_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                              <td className="p-3 text-[#0D2847] font-medium">{h.user_name || h.user_email}</td>
+                              <td className="p-3">{h.from_post ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{h.from_post}</span> : <span className="text-slate-300 italic">—</span>}</td>
+                              <td className="p-3">{h.to_post ? <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-medium">{h.to_post}</span> : <span className="text-red-500 italic">cleared</span>}</td>
+                              <td className="p-3 text-slate-500">{h.changed_by}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>}
+                </div>
+              </div>
+
+              {/* General Activity Log */}
+              <div className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden" data-testid="admin-activity-log">
+                <div className="max-h-[70vh] overflow-y-auto">
+                  {activityLogs.length === 0 ? <p className="text-center text-slate-400 py-12">No activity.</p> :
+                    <table className="w-full text-xs"><thead className="sticky top-0 bg-sky-50 border-b border-sky-100"><tr><th className="text-left p-3 text-slate-500 font-medium">Time</th><th className="text-left p-3 text-slate-500 font-medium">Action</th><th className="text-left p-3 text-slate-500 font-medium">User</th><th className="text-left p-3 text-slate-500 font-medium">Details</th></tr></thead>
+                      <tbody>{activityLogs.map((log, i) => (<tr key={log.id || i} className="border-b border-sky-50 hover:bg-sky-50/30"><td className="p-3 text-slate-400 whitespace-nowrap">{new Date(log.timestamp).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td><td className="p-3"><span className="px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100 font-medium">{log.action}</span></td><td className="p-3 text-slate-600">{log.user_email || "—"}</td><td className="p-3 text-slate-500 max-w-xs truncate">{log.details}</td></tr>))}</tbody>
+                    </table>}
+                </div>
               </div>
             </div>
           )}

@@ -23,6 +23,14 @@ async def admin_list_donations(user: dict = Depends(require_admin)):
     return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 
+@router.get("/admin/office-bearer-history")
+async def admin_office_bearer_history(user: dict = Depends(require_admin)):
+    """Audit trail of every office-bearer post change (assignment, reassignment,
+    clearing). Visible to all admins so the team shares a single source of truth
+    during AGMs and annual filings. Returned newest-first."""
+    return await db.office_bearer_history.find({}, {"_id": 0}).sort("changed_at", -1).to_list(500)
+
+
 @router.put("/admin/donations/{item_id}/status")
 async def admin_update_donation_status(item_id: str, data: StatusUpdate, user: dict = Depends(require_admin)):
     result = await db.donations.update_one({"id": item_id}, {"$set": {"status": data.status}})
@@ -210,7 +218,22 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
             updates["unsuspended_by"] = admin["email"]
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+    # Capture old designation BEFORE the update, so we can write an audit row
+    old_designation = (target.get("designation") or "").strip() if "designation" in updates else None
     await db.users.update_one({"email": email}, {"$set": updates})
+    # Write Office-Bearer History when a post changes
+    if old_designation is not None and old_designation != updates.get("designation", ""):
+        new_designation = updates.get("designation", "") or ""
+        await db.office_bearer_history.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_email": email,
+            "user_name": target.get("name", ""),
+            "from_post": old_designation or None,
+            "to_post": new_designation or None,
+            "changed_by": admin["email"],
+            "reason": (data.leadership_bio or "").strip()[:280] or None,
+            "changed_at": datetime.now(timezone.utc).isoformat(),
+        })
     changes = ", ".join(f"{k}={v}" for k, v in updates.items())
     await log_activity("admin_user_updated", "user", email, admin["email"], changes, "")
     return {"message": f"User {email} updated successfully"}
