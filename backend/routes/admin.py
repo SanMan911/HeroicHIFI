@@ -176,10 +176,21 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
         if not is_super_admin(admin):
             raise HTTPException(status_code=403, detail="Only the Master Admin can assign or remove an office-bearer post.")
         if data.designation is not None:
-            from data.office_posts import OFFICE_POSTS_SET
+            from data.office_posts import OFFICE_POSTS_SET, UNIQUE_POSTS
             cleaned = data.designation.strip()
             if cleaned and cleaned not in OFFICE_POSTS_SET:
                 raise HTTPException(status_code=400, detail=f"'{cleaned}' is not a recognised office-bearer post.")
+            # Enforce single-occupant posts (Chairman / Secretary / Treasurer)
+            if cleaned in UNIQUE_POSTS:
+                holder = await db.users.find_one(
+                    {"designation": cleaned, "email": {"$ne": email}},
+                    {"_id": 0, "name": 1, "email": 1},
+                )
+                if holder:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{cleaned} post is currently held by {holder.get('name') or holder.get('email')}. Clear their post first before assigning it to someone else.",
+                    )
             updates["designation"] = cleaned
         if data.leadership_bio is not None:
             updates["leadership_bio"] = data.leadership_bio.strip()[:280]

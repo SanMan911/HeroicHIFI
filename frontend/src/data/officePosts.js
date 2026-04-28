@@ -1,29 +1,12 @@
-// Canonical NGO office-bearer posts. Must stay in sync with
-// /app/backend/data/office_posts.py — the backend validates against this list.
+// Canonical office-bearer posts. Stay in sync with
+// /app/backend/data/office_posts.py — the backend enforces uniqueness for
+// Chairman / Secretary / Treasurer (only one person can hold each). Assistant
+// can be held by any number of people.
 export const OFFICE_POSTS = [
-  "Founder",
-  "Co-Founder",
-  "President",
-  "Vice President",
-  "General Secretary",
-  "Joint Secretary",
+  "Chairman",
+  "Secretary",
   "Treasurer",
-  "Joint Treasurer",
-  "Managing Trustee",
-  "Trustee",
-  "Board Member",
-  "Independent Director",
-  "Executive Director",
-  "Programme Director",
-  "Chief Operating Officer",
-  "Chief Financial Officer",
-  "Programme Manager",
-  "Volunteer Coordinator",
-  "Fundraising Lead",
-  "Communications Lead",
-  "Partnerships Lead",
-  "Advisor",
-  "Legal Advisor",
-  "Mentor",
-  "Auditor",
+  "Assistant",
 ];
+
+export const UNIQUE_POSTS = new Set(["Chairman", "Secretary", "Treasurer"]);

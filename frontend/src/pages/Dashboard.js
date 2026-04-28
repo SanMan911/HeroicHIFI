@@ -820,7 +820,7 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
           <div><label className="text-xs text-slate-400 block mb-1">Comments</label><div className="flex gap-1"><textarea value={comments} onChange={e => setComments(e.target.value)} rows={2} className="flex-1 text-xs border rounded-lg px-2 py-1 resize-none" /><button onClick={() => onUpdate(u.email, { admin_comments: comments })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg self-end">Save</button></div></div>
           {canManageOfficePost && (
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-2" data-testid={`office-editor-${u.email}`}>
-              <p className="text-xs font-medium text-amber-900 flex items-center gap-1.5"><Compass className="w-3 h-3" /> Office-Bearer Post <span className="text-[10px] text-amber-700/70 font-normal">(Master Admin only · appears on the public About page)</span></p>
+              <p className="text-xs font-medium text-amber-900 flex items-center gap-1.5"><Compass className="w-3 h-3" /> Office-Bearer Post <span className="text-[10px] text-amber-700/70 font-normal">(Master Admin only · Chairman / Secretary / Treasurer are limited to one person each)</span></p>
               <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
                 <select
                   value={designation}
