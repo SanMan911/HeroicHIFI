@@ -29,5 +29,5 @@ export const ORG_INFO = {
   cin: "U88900BR2024NPL072593",
   address: "C/o Nirbhay Kr. Agnihotry, Village: Korha, Tola: Korha, Mirjanhat, Bhagalpur, Jagdishpur, Bihar 812005 (India)",
   email: "hhf.hifi@proton.me",
-  phone: "(+91) 7970976881",
+  phone: "(+91) 9060460224",
 };

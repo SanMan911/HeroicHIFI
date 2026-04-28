@@ -175,7 +175,7 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
     c.setFont("Helvetica", 9)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, "Heroic HIFI Foundation")
-    c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 7970976881")
+    c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 9060460224")
 
     c.save()
     buf.seek(0)
@@ -316,7 +316,7 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     c.setFont("Helvetica", 8)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, "Authorised Signatory")
-    c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 7970976881")
+    c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 9060460224")
 
     c.save()
     buf.seek(0)

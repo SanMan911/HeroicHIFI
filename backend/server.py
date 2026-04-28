@@ -61,7 +61,7 @@ async def startup():
         await db.users.insert_one({
             "email": admin_email, "password_hash": hash_password(admin_password),
             "name": "Admin", "role": "admin", "email_verified": True,
-            "phone": "(+91) 7970976881", "pan_number": "", "aadhaar_number": "",
+            "phone": "(+91) 9060460224", "pan_number": "", "aadhaar_number": "",
             "address": "", "age": None, "dob": "",
             "pan_verified": False, "aadhaar_verified": False,
             "created_at": datetime.now(timezone.utc).isoformat()

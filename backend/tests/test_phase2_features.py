@@ -12,7 +12,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hifi-ngo-portal.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://hifi-donations-live.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "admin@heroichifi.org"
 ADMIN_PASSWORD = "HHF@admin2024"
 

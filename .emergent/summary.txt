@@ -1,216 +1,141 @@
 <analysis>**original_problem_statement:** 
-Build a website for Heroic HIFI Foundation, a Section 8 Non-Profit Organization in India. The application requires pages for donations (with Razorpay integration), volunteer onboarding, and mission queries. Key features include an admin panel/dashboard, mandatory PAN details for donations, auto-generation of 80G tax receipt PDFs, an OTP-based login system via email, and a community messaging system where volunteers can interact but all numbers (numerals and word forms) are strictly stripped from the recipient's view.
+Build a website for Heroic HIFI Foundation, a Section 8 Non-Profit Organization in India. The application requires pages for donations, volunteer onboarding, missions, admin panel, mandatory PAN details for donations, auto-generation of 80G tax receipt PDFs, OTP-based login, a community messaging system, manual Hindi/English translations, a volunteer achievement/badge system, user profiles with DP upload, a Wall of Fame, a grievance ticket system, password reset via email, and deployment configurations for self-hosting.
+PRODUCT REQUIREMENTS: Full-stack app with custom UI matching NGO logo. Dual Language purely via manual text mapping. Live Razorpay subscriptions, separated Provisional vs Annual 80G receipts, robust Master Admin controls, and Two-Admin approval gates for critical actions.
 
-**User's preferred language**: English (INSTRUCT next agent to respond in English only. User also requested Hindi content built manually without translation tools, which is pending).
+**User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
 **what currently exists?** 
-A full-stack React and FastAPI application featuring a cohesive UI tailored to the NGO's specific logo colors (green-to-blue gradients, deep blue, amber). The app has functional pages (Home, About, Missions, Donate, Volunteer, Contact, Login, Dashboard). It includes an Admin Dashboard (tracking donations, volunteers, queries, users), Razorpay placeholder integration, Resend OTP login flow, and 80G PDF receipt generation. The backend endpoints for the new Community Messaging feature are in place.
+A fully functional React + FastAPI application with a heavily modularized backend. Features include OTP login (Resend), a unified roster, Razorpay donations (LIVE keys active, 4 subscription plans), Razorpay Webhooks, an auto-promotion Heroic Patron system, auto PDF generation (split into immediate Provisional receipts and year-end consolidated 80G certificates), a Two-Admin approval gate for mass 80G email dispatch, a hidden Master Admin role with override powers, and a Webhook Health Dashboard.
 
 **Last working item**:
-- Last item agent was working: Implementing the Community Directory and Messaging feature. The agent added backend endpoints to support messaging and number/word-stripping, and created the frontend  file, but was interrupted before integrating it into the app's routing and navigation.
-- Status: IN PROGRESS
-- Agent Testing Done: N
-- Which testing method agent to use? both (Use testing_agent_v3 once the community UI and admin message viewing are fully integrated).
+- Last item agent was working: Hardening the Provisional Receipt PDF (adding bold NOT A TAX PAPER disclaimers and gating the PDF download/email strictly behind a  payment status), and auditing the Admin Delete User and Forgot Password flows to prove to the user they already exist and function perfectly. The agent also spent time explaining the drift between the Preview Environment and the Production Deployment (Render/Vercel) to the user.
+- Status: USER VERIFICATION PENDING
+- Agent Testing Done: Y
+- Which testing method agent to use?: NA (Testing is already done via manual bash and screenshot validation for the latest changes;  was heavily used for the major features prior).
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-Issue 1: Incomplete Integration of Community.js and Admin Message Viewer (P0)
-- Attempted fixes: Agent created  and modified  but ran out of time to link it.
-- Next debug checklist: 
-  - Update  to add the  route.
-  - Update  to add the Community link in the navbar for logged-in users.
-  - Update  to include the Admin Messages tab, allowing admins to read unredacted threads.
-  - Review  logic in  to ensure it successfully captures number *words* (e.g., one, hundred, ek, do) as requested by the user, not just digits.
-- Why fix this issue and what will be achieved with the fix? It completes the user's latest requirement for volunteer communication while maintaining strict privacy.
-- Status: IN PROGRESS
-- Is recurring issue? N
-- Should Test frontend/backend/both after fix? both
+Issue 1: Resolve Production vs. Preview Deployment Drift
+- Attempted fixes: The agent updated all code in the preview pod and verified it works. Explained to the user that they must push the code to GitHub and update their Render Environment Variables (Razorpay live keys, Webhook secrets, Resend keys) for the live website to reflect the changes.
+- Next debug checklist: Ask the user if they successfully pushed to GitHub and updated the Render dashboard.
+- Why fix this issue and what will be achieved with the fix?: The user believes features are broken/missing because they are viewing their live Vercel/Render site, which is running old code and old test environment variables.
+- Status: USER VERIFICATION PENDING
+- Is recurring issue?: N
+- Should Test frontend/backend/both after fix?: Both (Smoke test production once user confirms deployment)
 - Blocked on other issue: None
 
+Issue 2: Sandbox API Keys for PAN-Aadhaar Verification
+- Attempted fixes: The architecture is fully built using placeholder keys ().
+- Next debug checklist: Await the user to provide the live Sandbox.co.in API Key and Secret.
+- Why fix this issue and what will be achieved with the fix?: Activates real-time verification of Indian tax IDs.
+- Status: BLOCKED
+- Is recurring issue?: N
+- Should Test frontend/backend/both after fix?: Backend
+- Blocked on other issue: User needs to create a Sandbox account and provide keys.
+
 **In progress Task List**:
-Task 1: Community Directory and Number-Stripped Messaging (P0)
-- Where to resume: Link  in  and . Add Admin thread view in . Refine the number-stripping regex in  to cover English/Hindi word representations of numbers.
-- What will be achieved with this? Volunteers can connect safely; sensitive numeric data (like phone numbers or financials) is automatically masked from recipients; Admins can monitor interactions.
-- Status: IN PROGRESS
-- Should Test frontend/backend/both after fix? both
-- Blocked on something: None
+None actively in progress. The agent just finished a massive batch of backend/frontend features and is waiting on the user to deploy them.
 
 **Upcoming and Future Tasks**:
-- P1: Implement manual Hindi translations for the website (User explicitly requested NO translation tools, must be grammatically sound).
-- P2: Aadhaar-PAN linkage verification via a third-party API.
-- P3: Recurring monthly donation subscriptions.
-- P4: Go-Live Configuration: Replace placeholder keys for Razorpay and Resend with live credentials when provided by the user.
+- P0: Assist user with deploying the current preview state to their production environment (GitHub push + Render Env Variable sync).
+- P1: Add a Forgot Password micro-link to the global Navbar or 401-redirect messages (Agent suggested this at the very end of the session to improve UX).
+- P2: Swap Sandbox API placeholder keys with live keys (when user provides them).
+- P3: Export Data feature (Allow admins to download CSVs of the roster, donations, and activity logs).
 
 **Completed work in this session**:
-- Initial React/FastAPI Scaffolding with Shadcn UI (DONE)
-- Custom Theme Mapping to match the exact logo gradient/palette (DONE)
-- Admin Dashboard for Donations, Queries, and Volunteers (DONE)
-- Resend OTP Email Verification Flow for Auth (DONE)
-- 80G Provisional Tax Certificate PDF Generation (DONE)
+- Added Volunteer Specialization multi-select dropdown in Login.js (DONE)
+- Admin Suspend/Remove user feature with mandatory reasons and audit logging (DONE)
+- Volunteer specialization filter on Admin Roster (DONE)
+- Razorpay Subscriptions integration with 4 LIVE fixed plans (Monthly, Quarterly, Half-Yearly, Annual) (DONE)
+- Razorpay Webhook signature verification and Webhook Health Widget (DONE)
+- Heroic Patron auto-promotion system (promotes users after 6 recurring charges) & Wall of Fame UI (DONE)
+- Separation of Provisional Receipt (immediate) vs Consolidated 80G Certificate (Year-End) with bold disclaimers (DONE)
+- Annual 80G Dispatch Daemon and Two-Admin Approval Gate (DONE)
+- Master Admin role creation (Hidden from other admins, possesses override powers, bypasses gates) (DONE)
+- PDF Download Gating (Only confirmed payments can trigger a receipt download) (DONE)
 
 **Earlier issues found/mentioned but not fixed**:
-None. Agent addressed all previous feedback systematically. 
+None.
 
 **Known issue recurrence from previous fork**:
-- Issue recurrence in previous fork: NA (First session)
+- Issue recurrence in previous fork: NA
 - Recurrence count: 0
-- Status: NOT STARTED
+- Status: RESOLVED
 
 **Code Architecture**:
--  (FastAPI backend handling Auth, API, OTPs, PDF generation, and Messaging)
-- :
-  -  (Navbar/Footer)
-  -  (Home, About, Missions, MissionDetail, Donate, Volunteer, Contact, Login, Dashboard, Community)
-  - , 
-  -  (Axios configuration)
-  -  (Router configuration)
+- 
+- 
+-  (auth.py, admin.py, donations.py, subscriptions.py, messages.py, profile.py, general.py, certificates.py)
+-  (auth.py, email.py, storage.py, privacy.py, badges.py, activity.py, llm.py, razorpay_subs.py, sandbox.py, patron.py, year_end.py)
+- 
+-  (Dashboard.js, Donate.js, WallOfFame.js, Login.js, etc.)
 
 **Key Technical Concepts**:
-React.js, FastAPI, MongoDB (Motor), Tailwind CSS, Shadcn UI, ReportLab (PDFs), Razorpay integration (Order generation), Resend (Emails).
+React.js, FastAPI, MongoDB, ReportLab (PDFs), Resend (Emails), Razorpay Subscriptions API & Webhooks, Emergent Object Storage, Gemini 3 Flash.
 
 **key DB schema**:
-- : {email, name, role, phone, pan, aadhaar, address, interests, created_at}
-- : {user_email, amount, status, pan, receipt_url, razorpay_order_id}
-- : {email, status, details}
-- : {email, mission, message, status}
-- : {sender, recipient, text, created_at}
-- : {action, email, timestamp}
+- : {email, name, role, is_super_admin, ...}
+- : {id, razorpay_order_id, razorpay_payment_id, status, plan, amount, ...}
+- : {id, razorpay_subscription_id, plan, charge_count, total_amount, ...}
+- : {id, event, verified, payload, received_at}
+- : {id, fy_label, status, created_by, approved_by, details}
+- : {deleted_by, reason, deleted_at, user_snapshot}
 
 **changes in tech stack**:
-- Added  for PDF generation.
-- Added  for email delivery.
-- Added  for backend order management.
+- Added extensive new utility scripts to handle specific domain logic (, , , ).
+- Integrated Razorpay Webhook signature validation.
 
 **All files of reference**:
--  (Contains the new  regex and message endpoints)
--  (Newly created messaging UI, unlinked)
--  (Needs update for Admin message tracking)
--  &  (Needs routing update)
+-  (New core file for recurring payments and webhook health)
+-  (Split logic for provisional vs tax certificates)
+-  (Contains the new automated receipt dispatcher)
+-  (Updated for 4 fixed subscription plans and hydration fixes)
+-  (Contains Webhook widget, Annual 80G draft approval, Master Admin badge)
+-  (Heroic Patrons section)
 
 **Areas that need refactoring**:
--  is approaching 700 lines. The regex logic for  must robustly identify numeric words (English/Hindi) to fulfill the strict privacy requirement.
+None. The code is highly modularized and passes strict linting.
 
 **key api endpoints**:
--  & 
 - 
--  (New, fetches users)
--  (New, sends message & scrubs numbers)
--  (New, unredacted thread for admin)
+-  (Requires )
+-  (Two-admin gated)
+- 
 
 **Critical Info for New Agent**:
-- The website's theme is highly specific, derived from the organization's logo (pale green  to aqua  to light blue  gradients, with amber accents). Do NOT revert to generic dark/earthy themes.
-- The user is extremely strict about the messaging feature: **Recipients cannot see ANY numbers in numerals or word form**. Ensure the regex/scrubbing logic in  handles words like one, two, hundred, ek, do, etc.
-- Always use yarn install v1.22.22
-[1/4] Resolving packages...
-[2/4] Fetching packages...
-[3/4] Linking dependencies...
-[4/4] Building fresh packages...
-success Saved lockfile.
-Done in 0.08s. for frontend dependencies and standard 
-Usage:   
-  pip <command> [options]
-
-Commands:
-  install                     Install packages.
-  lock                        Generate a lock file.
-  download                    Download packages.
-  uninstall                   Uninstall packages.
-  freeze                      Output installed packages in requirements format.
-  inspect                     Inspect the python environment.
-  list                        List installed packages.
-  show                        Show information about installed packages.
-  check                       Verify installed packages have compatible 
-dependencies.
-  config                      Manage local and global configuration.
-  search                      Search PyPI for packages.
-  cache                       Inspect and manage pip's wheel cache.
-  index                       Inspect information available from package 
-indexes.
-  wheel                       Build wheels from your requirements.
-  hash                        Compute hashes of package archives.
-  completion                  A helper command used for command completion.
-  debug                       Show information useful for debugging.
-  help                        Show help for commands.
-
-General Options:
-  -h, --help                  Show help.
-  --debug                     Let unhandled exceptions propagate outside the
-                              main subroutine, instead of logging them to
-                              stderr.
-  --isolated                  Run pip in an isolated mode, ignoring
-                              environment variables and user configuration.
-  --require-virtualenv        Allow pip to only run in a virtual environment;
-                              exit with an error otherwise.
-  --python <python>           Run pip with the specified Python interpreter.
-  -v, --verbose               Give more output. Option is additive, and can be
-                              used up to 3 times.
-  -V, --version               Show version and exit.
-  -q, --quiet                 Give less output. Option is additive, and can be
-                              used up to 3 times (corresponding to WARNING,
-                              ERROR, and CRITICAL logging levels).
-  --log <path>                Path to a verbose appending log.
-  --no-input                  Disable prompting for input.
-  --keyring-provider <keyring_provider>
-                              Enable the credential lookup via the keyring
-                              library if user input is allowed. Specify which
-                              mechanism to use [auto, disabled, import,
-                              subprocess]. (default: auto)
-  --proxy <proxy>             Specify a proxy in the form
-                              scheme://[user:passwd@]proxy.server:port.
-  --retries <retries>         Maximum attempts to establish a new HTTP
-                              connection. (default: 5)
-  --timeout <sec>             Set the socket timeout (default 15 seconds).
-  --exists-action <action>    Default action when a path already exists:
-                              (s)witch, (i)gnore, (w)ipe, (b)ackup, (a)bort.
-  --trusted-host <hostname>   Mark this host or host:port pair as trusted,
-                              even though it does not have valid or any HTTPS.
-  --cert <path>               Path to PEM-encoded CA certificate bundle. If
-                              provided, overrides the default. See 'SSL
-                              Certificate Verification' in pip documentation
-                              for more information.
-  --client-cert <path>        Path to SSL client certificate, a single file
-                              containing the private key and the certificate
-                              in PEM format.
-  --cache-dir <dir>           Store the cache data in <dir>.
-  --no-cache-dir              Disable the cache.
-  --disable-pip-version-check
-                              Don't periodically check PyPI to determine
-                              whether a new version of pip is available for
-                              download. Implied with --no-
-                              index.
-  --no-color                  Suppress colored output.
-  --use-feature <feature>     Enable new functionality, that may be backward
-                              incompatible.
-  --use-deprecated <feature>  Enable deprecated functionality, that will be
-                              removed in the future.
-  --resume-retries <resume_retries>
-                              Maximum attempts to resume or restart an
-                              incomplete download. (default: 5) updates followed by  for backend.
+- **Deployment Confusion:** The user was confused why features built in the preview pod weren't immediately visible on their live URL. The agent carefully explained the difference between the preview environment and their production Render/Vercel environments. Your primary initial goal should be ensuring they actually pushed to GitHub and updated their  variables on Render.
+- **Master Admin:**  is a Super-Admin (). They are dynamically hidden from roster views and activity logs accessed by regular admins, and they can bypass the 2-admin approval gates. Do not break this hiding logic.
+- **Razorpay is LIVE:** The  in the current workspace has been updated to use  keys. Do not revert to test keys.
+- **Receipt Logic:** Provisional receipts fire immediately upon a  status. Annual 80G certificates are strictly meant to be batch-dispatched by admins at the end of the Financial Year.
 
 **documents and test reports created in this job**:
-- 
-- 
-- 
-- 
+-  (Continuously updated)
+-  (Updated with secondary admin info)
+-  through 
 
 **Last 10 User Messages and any pending HUMAN messages**:
-- *User*: Let the volunteers be able to see others by name and designation. Allow everyone to connect with every other person/volunteer via name but only upon registration. Also keep a log and let admins be able to view the threads. Only admins can see PAN and other details. Ensure the sender can send anything but the recipient cannot see ANY numbers in numerals or word form. (Action: Agent started implementing this in  and created , but integration is pending).
+- *User*: Make the provisional receipt state it CANNOT be treated as a tax paper; make it downloadable only on payment confirmation. Fix Razorpay showing TEST mode. Fix Master admin only seeing 3 users. Ensure users can be deleted and have forgot password.
+- *Agent*: Realized the user is looking at their production site, not the preview. Code fixes applied to the preview for the Provisional PDF (gating + red disclaimer text). Showed user that Delete User and Forgot Password already exist and work perfectly via exhaustive bash tests. Gently instructed the user to push code to GitHub and update Render Env vars.
+- *Pending*: Wait for the user to respond on whether they successfully deployed to production.
 
 **Project Health Check**:
-Healthy. Backend and Frontend were compiling and successfully passing E2E tests prior to the addition of the new messaging code.
+Backend and Frontend are extremely healthy in the preview environment (passing 21/21 backend tests and 4/4 frontend tests in the final suite).
 
 **3rd Party Integrations**:
-- Razorpay (Payments) — requires User API Key (Currently using placeholder env variables)
-- Resend (Emails/OTP) — requires User API Key (Currently using placeholder env variables)
+- Resend (Emails) — requires User API Key (Live Key Active)
+- Razorpay (Payments & Webhooks) — requires User API Key (Live Key Active, Webhook Secret Active)
+- Emergent Object Storage (Image Uploads) — uses Emergent LLM Key
+- Gemini 3 Flash (AI Articles) — uses Emergent LLM Key
 
 **Testing status**:
-- Testing agent used after significant changes: YES (Tested iterations 1, 2, and 3 successfully).
+- Testing agent used after significant changes: YES ( through  all utilized the testing agent extensively).
 - Troubleshoot agent used after agent stuck in loop: NO
-- Test files created: None explicitly by main agent.
-- Known regressions: None currently.
+- Test files created: Handled automatically by testing agent.
+- Known regressions: None in the preview environment.
 
 **Credentials to test flow**:
-- Admin account: Email  / Password 
+- Master Admin: Email  / Password 
+- Regular Admin: Email  / Password 
 
 **What agent forgot to execute**:
-The agent did not finish hooking up the  component to the  router or the  navigation bar, and did not build the Admin Messages view in . The agent also did not construct the Hindi translations (which the user requested be done organically, without translation tools) from the initial problem statement.</analysis>
+The agent proposed adding a quick Forgot Password micro-link to the global Navbar or 401-redirect screens right before finishing, but did not implement it yet. You can pick this up if the user agrees.</analysis>
