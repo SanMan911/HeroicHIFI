@@ -38,6 +38,9 @@ export default function Donate() {
   const [customAmount, setCustomAmount] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [recurringPlan, setRecurringPlan] = useState("monthly");
+  const [customRecurring, setCustomRecurring] = useState(false);
+  const [customSubAmount, setCustomSubAmount] = useState(500);
+  const [customInterval, setCustomInterval] = useState("monthly");
   const RECURRING_PLANS = [
     { key: "monthly", amount: 100, en: "Monthly", hi: "मासिक", cycles: 12, sub: "₹100 / month" },
     { key: "quarterly", amount: 275, en: "Quarterly", hi: "त्रैमासिक", cycles: 4, sub: "₹275 every 3 months" },
@@ -102,15 +105,19 @@ export default function Donate() {
       if (recurring) {
         if (!user) { toast.error("Please log in to set up recurring donations"); setSubmitting(false); return; }
         const subPayload = {
-          plan: recurringPlan,
+          plan: customRecurring ? `custom_${customInterval}` : recurringPlan,
           name: form.name, email: form.email, phone: form.phone,
           pan_number: form.pan_number, address: form.address || "",
+          ...(customRecurring ? { custom_amount: parseInt(customSubAmount) || 0 } : {}),
         };
+        if (customRecurring && (!subPayload.custom_amount || subPayload.custom_amount < 100)) {
+          toast.error("Custom recurring amount must be at least \u20B9 100 per cycle.");
+          setSubmitting(false); return;
+        }
         const { data } = await api.post("/subscriptions/create", subPayload);
         if (data.short_url) {
-          // LIVE flow — Razorpay hosted authorization page
           window.open(data.short_url, "_blank");
-          toast.success(`Recurring ${recurringPlan} donation set up! Complete authorization in the new tab.`);
+          toast.success(`Recurring donation set up! Complete authorization in the new tab.`);
         } else {
           toast.success(`Recurring donation request recorded. ${data.note || "Razorpay activation pending."}`);
         }
@@ -322,26 +329,70 @@ export default function Donate() {
                     <p className="text-xs text-amber-700 mt-2 font-medium">{lang === "hi" ? "कृपया पहले लॉग इन करें।" : "Please log in to set up a recurring donation."}</p>
                   )}
                   {recurring && user && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3" data-testid="recurring-plan-row">
-                      {RECURRING_PLANS.map(p => {
-                        const active = recurringPlan === p.key;
-                        return (
-                          <button
-                            key={p.key}
-                            type="button"
-                            onClick={() => setRecurringPlan(p.key)}
-                            data-testid={`plan-${p.key}`}
-                            className={`p-3 rounded-xl border-2 text-center transition-all ${active ? "border-[#FF7F00] bg-[#FF7F00] text-white shadow-md" : "border-amber-200 bg-white text-slate-700 hover:border-amber-300"}`}
-                          >
-                            <p className={`text-xs font-semibold uppercase tracking-wider ${active ? "text-white/90" : "text-slate-500"}`}>{lang === "hi" ? p.hi : p.en}</p>
-                            <p className={`text-lg font-bold mt-0.5 ${active ? "text-white" : "text-[#0D2847]"}`} style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                              ₹{p.amount.toLocaleString("en-IN")}
-                            </p>
-                            <p className={`text-[10px] mt-0.5 ${active ? "text-white/80" : "text-slate-400"}`}>{p.sub.split(" ").slice(1).join(" ")}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3" data-testid="recurring-plan-row">
+                        {RECURRING_PLANS.map(p => {
+                          const active = !customRecurring && recurringPlan === p.key;
+                          return (
+                            <button
+                              key={p.key}
+                              type="button"
+                              onClick={() => { setCustomRecurring(false); setRecurringPlan(p.key); }}
+                              data-testid={`plan-${p.key}`}
+                              className={`p-3 rounded-xl border-2 text-center transition-all ${active ? "border-[#FF7F00] bg-[#FF7F00] text-white shadow-md" : "border-amber-200 bg-white text-slate-700 hover:border-amber-300"}`}
+                            >
+                              <p className={`text-xs font-semibold uppercase tracking-wider ${active ? "text-white/90" : "text-slate-500"}`}>{lang === "hi" ? p.hi : p.en}</p>
+                              <p className={`text-lg font-bold mt-0.5 ${active ? "text-white" : "text-[#0D2847]"}`} style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                                {"\u20B9"}{p.amount.toLocaleString("en-IN")}
+                              </p>
+                              <p className={`text-[10px] mt-0.5 ${active ? "text-white/80" : "text-slate-400"}`}>{p.sub.split(" ").slice(1).join(" ")}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCustomRecurring(c => !c)}
+                        className={`mt-3 w-full text-xs px-3 py-2 rounded-xl border-2 transition-all ${customRecurring ? "border-[#FF7F00] bg-[#FF7F00]/5 text-[#FF7F00] font-semibold" : "border-dashed border-amber-300 text-amber-700 hover:bg-amber-50"}`}
+                        data-testid="toggle-custom-recurring"
+                      >
+                        {customRecurring ? "\u2713 Using a custom recurring amount — click again to use a fixed plan" : "Or pick a custom amount & frequency \u2192"}
+                      </button>
+                      {customRecurring && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 bg-amber-50/40 border border-amber-200 rounded-xl p-3" data-testid="custom-recurring-row">
+                          <div className="sm:col-span-1">
+                            <label className="text-[10px] font-medium text-amber-800 uppercase tracking-wider">Amount per cycle ({"\u20B9"})</label>
+                            <input
+                              type="number" min={100} step={50} value={customSubAmount}
+                              onChange={e => setCustomSubAmount(e.target.value)}
+                              className="w-full mt-1 px-3 py-2 rounded-lg border border-amber-200 text-sm font-semibold text-[#0D2847]"
+                              data-testid="custom-amount-input"
+                            />
+                            <p className="text-[10px] text-amber-700/80 mt-1">Min {"\u20B9"} 100 / cycle.</p>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="text-[10px] font-medium text-amber-800 uppercase tracking-wider">How often?</label>
+                            <div className="grid grid-cols-4 gap-1 mt-1">
+                              {[
+                                { k: "monthly", l: "Monthly" },
+                                { k: "quarterly", l: "Quarterly" },
+                                { k: "half_yearly", l: "Half-yearly" },
+                                { k: "annual", l: "Annual" },
+                              ].map(it => (
+                                <button
+                                  key={it.k}
+                                  type="button"
+                                  onClick={() => setCustomInterval(it.k)}
+                                  className={`text-[11px] px-2 py-2 rounded-lg border-2 transition-colors ${customInterval === it.k ? "border-[#FF7F00] bg-[#FF7F00] text-white font-semibold" : "border-amber-200 bg-white text-slate-700 hover:border-amber-300"}`}
+                                  data-testid={`custom-interval-${it.k}`}
+                                >{it.l}</button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-amber-700/80 mt-1.5">Razorpay auto-charges {"\u20B9"}{Number(customSubAmount || 0).toLocaleString("en-IN")} every {customInterval.replace("_", " ")} on your saved payment method.</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </label>

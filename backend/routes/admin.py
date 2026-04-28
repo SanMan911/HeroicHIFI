@@ -908,6 +908,51 @@ async def list_event_proposals(admin: dict = Depends(require_admin)):
     return {"events": rows, "treasurer_email": treasurer, "viewer_is_treasurer": (admin.get("designation") == "Treasurer")}
 
 
+@router.get("/admin/treasury-snapshot")
+async def admin_treasury_snapshot(admin: dict = Depends(require_admin)):
+    """Live financial snapshot used by the Treasurer to gauge headroom before
+    approving an event budget. All numbers are scoped to the current Indian
+    Financial Year (1 Apr → 31 Mar)."""
+    today = datetime.now(timezone.utc).date()
+    fy_s, fy_e, fy_label = fy_for_date(today)
+    s_iso = fy_s.isoformat()
+    e_iso = fy_e.isoformat() + "T23:59:59"
+    # Confirmed donations YTD
+    don_pipeline = [
+        {"$match": {"status": "confirmed", "created_at": {"$gte": s_iso, "$lte": e_iso}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]
+    don_agg = await db.donations.aggregate(don_pipeline).to_list(1)
+    confirmed_total = int(don_agg[0]["total"]) if don_agg else 0
+    confirmed_count = int(don_agg[0]["count"]) if don_agg else 0
+    # Approved event budgets YTD (events whose event_date falls in FY)
+    ev_approved = db.event_proposals.find(
+        {"status": "approved", "event_date": {"$gte": s_iso, "$lte": fy_e.isoformat()}},
+        {"_id": 0, "drive_name": 1, "budget": 1, "event_date": 1, "treasurer_email": 1},
+    )
+    approved_rows = await ev_approved.to_list(500)
+    approved_committed = int(sum(float(e.get("budget", 0) or 0) for e in approved_rows))
+    # Pending events awaiting treasurer (status='seconded')
+    ev_pending = db.event_proposals.find(
+        {"status": "seconded"}, {"_id": 0, "drive_name": 1, "budget": 1, "event_date": 1},
+    )
+    pending_rows = await ev_pending.to_list(500)
+    pending_total = int(sum(float(e.get("budget", 0) or 0) for e in pending_rows))
+    headroom = confirmed_total - approved_committed
+    return {
+        "fy_label": fy_label,
+        "fy_start": fy_s.isoformat(),
+        "fy_end": fy_e.isoformat(),
+        "confirmed_donations": confirmed_total,
+        "confirmed_donation_count": confirmed_count,
+        "approved_event_budgets": approved_committed,
+        "approved_event_count": len(approved_rows),
+        "pending_event_budgets": pending_total,
+        "pending_event_count": len(pending_rows),
+        "available_headroom": headroom,
+    }
+
+
 # ── Event Report & Article Generation ──
 @router.post("/admin/events/report")
 async def submit_event_report(data: EventReportInput, admin: dict = Depends(require_admin)):

@@ -67,44 +67,76 @@ def _placeholder_plans() -> bool:
 async def create_subscription(plan: str, amount_rupees: int, customer: dict) -> dict:
     """
     Create (or simulate) a Razorpay subscription.
+
+    For the four standard plans (monthly/quarterly/half_yearly/annual) we
+    reuse the long-lived Plan IDs from .env. For ``custom`` plans we create
+    a one-off Razorpay Plan on the fly so donors can pick any amount.
+
     Returns: { subscription_id, key_id, plan_id, short_url, status, mode }
     """
     rz_key = os.environ.get("RAZORPAY_KEY_ID")
     rz_secret = os.environ.get("RAZORPAY_KEY_SECRET")
 
-    plan_env_key = PLAN_ENV_MAP.get(plan)
-    if not plan_env_key:
-        return {"subscription_id": "", "key_id": "", "plan_id": "", "short_url": "",
-                "status": "invalid_plan", "mode": "stub"}
-    plan_id = os.environ.get(plan_env_key, "")
-
     if not rz_key or not rz_secret:
-        return {"subscription_id": "", "key_id": "", "plan_id": plan_id, "short_url": "",
+        return {"subscription_id": "", "key_id": "", "plan_id": "", "short_url": "",
                 "status": "razorpay_not_configured", "mode": "stub"}
 
-    if _placeholder_plans():
-        return {
-            "subscription_id": f"sub_PENDING_{plan}_{customer.get('email', '')[:8]}",
-            "key_id": rz_key,
-            "plan_id": plan_id,
-            "short_url": "",
-            "status": "placeholder_plan",
-            "mode": "stub",
-            "note": "Create real plans in Razorpay dashboard, then set RAZORPAY_PLAN_MONTHLY etc. in .env",
-        }
+    # Resolve plan_id — either from env, or create on the fly for "custom_*"
+    plan_id = ""
+    interval_unit, interval_count = "monthly", 1
+    total_count = 12
+
+    if plan in PLAN_ENV_MAP:
+        plan_id = os.environ.get(PLAN_ENV_MAP[plan], "")
+        interval_unit, interval_count = PLAN_TO_INTERVAL.get(plan, ("monthly", 1))
+        total_count = PLAN_TOTAL_COUNT.get(plan, 12)
+        if _placeholder_plans():
+            return {
+                "subscription_id": f"sub_PENDING_{plan}_{customer.get('email', '')[:8]}",
+                "key_id": rz_key, "plan_id": plan_id, "short_url": "",
+                "status": "placeholder_plan", "mode": "stub",
+                "note": "Create real plans in Razorpay dashboard, then set RAZORPAY_PLAN_* in .env",
+            }
+    elif plan.startswith("custom_"):
+        # Format: custom_<interval>  e.g. custom_monthly
+        custom_interval = plan.split("_", 1)[1]
+        if custom_interval not in PLAN_TO_INTERVAL:
+            return {"subscription_id": "", "key_id": rz_key, "plan_id": "", "short_url": "",
+                    "status": "invalid_custom_interval", "mode": "live"}
+        interval_unit, interval_count = PLAN_TO_INTERVAL[custom_interval]
+        total_count = PLAN_TOTAL_COUNT.get(custom_interval, 12)
+    else:
+        return {"subscription_id": "", "key_id": "", "plan_id": "", "short_url": "",
+                "status": "invalid_plan", "mode": "stub"}
 
     try:
         import razorpay
         cli = razorpay.Client(auth=(rz_key, rz_secret))
+        # Create a one-off Plan for custom amounts (Razorpay needs a Plan
+        # object even for ad-hoc subscription amounts)
+        if plan.startswith("custom_"):
+            plan_obj = cli.plan.create({
+                "period": interval_unit,
+                "interval": interval_count,
+                "item": {
+                    "name": f"Heroic HIFI Foundation — Custom {plan.split('_', 1)[1].replace('_', ' ').title()} Donation",
+                    "amount": int(amount_rupees) * 100,  # paise
+                    "currency": "INR",
+                    "description": f"Recurring donation of \u20B9{int(amount_rupees):,} every {interval_count} {interval_unit}",
+                },
+                "notes": {"created_for": customer.get("email", ""), "kind": "custom"},
+            })
+            plan_id = plan_obj["id"]
         sub = cli.subscription.create({
             "plan_id": plan_id,
-            "total_count": PLAN_TOTAL_COUNT.get(plan, 12),
+            "total_count": total_count,
             "customer_notify": 1,
             "notes": {
                 "donor_name": customer.get("name", ""),
                 "donor_email": customer.get("email", ""),
                 "donor_pan": customer.get("pan_number", ""),
                 "amount_rupees": str(amount_rupees),
+                "plan_label": plan,
             },
         })
         return {"subscription_id": sub["id"], "key_id": rz_key, "plan_id": plan_id,

@@ -129,7 +129,7 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes, rmRes, evpRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes, rmRes, evpRes, tsRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
@@ -142,6 +142,7 @@ export default function Dashboard() {
         api.get("/admin/office-bearer-history"),
         api.get("/admin/remove-admin-requests"),
         api.get("/admin/events/proposals"),
+        api.get("/admin/treasury-snapshot"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -156,6 +157,7 @@ export default function Dashboard() {
       setRemovalRequests(rmRes.data);
       setEventProposals(evpRes.data?.events || []);
       setViewerIsTreasurer(!!evpRes.data?.viewer_is_treasurer);
+      setTreasurySnapshot(tsRes.data || null);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -245,6 +247,7 @@ export default function Dashboard() {
   // Event proposal workflow state
   const [eventProposals, setEventProposals] = useState([]);
   const [viewerIsTreasurer, setViewerIsTreasurer] = useState(false);
+  const [treasurySnapshot, setTreasurySnapshot] = useState(null);
   const [showProposeForm, setShowProposeForm] = useState(false);
   const [proposalForm, setProposalForm] = useState({ mission: "", drive_name: "", event_date: "", place: "", days: 1, event_time: "", budget: 0, notes: "" });
   const handleCreateDrive = async () => { if (!driveForm.title || !driveForm.date || !driveForm.location) { toast.error("Fill title, date, location"); return; } try { await api.post("/admin/drives", driveForm); toast.success("Created!"); setDriveForm({ title: "", description: "", date: "", location: "", drive_type: "upcoming", mission_slug: "", estimated_days: 1, time: "" }); setShowDriveForm(false); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
@@ -508,6 +511,37 @@ export default function Dashboard() {
           {/* EVENTS / DRIVES */}
           {activeTab === "drives" && (
             <div data-testid="admin-drives">
+              {/* — Treasury Snapshot — */}
+              {treasurySnapshot && (
+                <div className="bg-gradient-to-r from-emerald-50 via-white to-amber-50 border-2 border-emerald-200 rounded-2xl p-4 mb-4" data-testid="treasury-snapshot">
+                  <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                    <p className="text-xs font-semibold text-emerald-900 uppercase tracking-[0.18em] flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" /> Treasury Snapshot · FY {treasurySnapshot.fy_label}</p>
+                    <p className="text-[10px] text-slate-500">Real-time. Refreshed every Dashboard load.</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white rounded-xl border border-emerald-100 p-3" data-testid="ts-confirmed">
+                      <p className="text-[10px] text-emerald-700/80 uppercase font-medium">Confirmed Donations</p>
+                      <p className="text-lg font-bold text-emerald-700 mt-0.5" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{"\u20B9"} {Number(treasurySnapshot.confirmed_donations).toLocaleString("en-IN")}</p>
+                      <p className="text-[10px] text-slate-400">{treasurySnapshot.confirmed_donation_count} payments</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-amber-100 p-3" data-testid="ts-approved">
+                      <p className="text-[10px] text-amber-700/80 uppercase font-medium">Approved Event Budgets</p>
+                      <p className="text-lg font-bold text-amber-700 mt-0.5" style={{ fontFamily: "'Cormorant Garamond', serif" }}>− {"\u20B9"} {Number(treasurySnapshot.approved_event_budgets).toLocaleString("en-IN")}</p>
+                      <p className="text-[10px] text-slate-400">{treasurySnapshot.approved_event_count} approved events</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-sky-100 p-3" data-testid="ts-pending">
+                      <p className="text-[10px] text-sky-700/80 uppercase font-medium">Awaiting Treasurer</p>
+                      <p className="text-lg font-bold text-sky-700 mt-0.5" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{"\u20B9"} {Number(treasurySnapshot.pending_event_budgets).toLocaleString("en-IN")}</p>
+                      <p className="text-[10px] text-slate-400">{treasurySnapshot.pending_event_count} seconded events</p>
+                    </div>
+                    <div className={`rounded-xl border-2 p-3 ${treasurySnapshot.available_headroom >= treasurySnapshot.pending_event_budgets ? "bg-emerald-50 border-emerald-300" : "bg-red-50 border-red-300"}`} data-testid="ts-headroom">
+                      <p className={`text-[10px] uppercase font-medium ${treasurySnapshot.available_headroom >= treasurySnapshot.pending_event_budgets ? "text-emerald-800" : "text-red-700"}`}>Available Headroom</p>
+                      <p className={`text-lg font-bold mt-0.5 ${treasurySnapshot.available_headroom >= 0 ? "text-emerald-800" : "text-red-700"}`} style={{ fontFamily: "'Cormorant Garamond', serif" }}>= {"\u20B9"} {Number(treasurySnapshot.available_headroom).toLocaleString("en-IN")}</p>
+                      <p className={`text-[10px] ${treasurySnapshot.available_headroom >= treasurySnapshot.pending_event_budgets ? "text-emerald-700/70" : "text-red-600"}`}>{treasurySnapshot.available_headroom >= treasurySnapshot.pending_event_budgets ? "Sufficient for all pending events." : "Pending requests exceed headroom — Treasurer should defer or decline."}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* — Event Proposal Workflow — */}
               <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 mb-6" data-testid="event-proposals-card">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">

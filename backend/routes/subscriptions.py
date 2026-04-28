@@ -33,9 +33,19 @@ router = APIRouter(prefix="/api")
 
 @router.post("/subscriptions/create")
 async def subscription_create(data: SubscriptionInput, request: Request, user: dict = Depends(get_current_user)):
-    if data.plan not in PLAN_AMOUNTS:
-        raise HTTPException(status_code=400, detail=f"Plan must be one of: {', '.join(PLAN_AMOUNTS.keys())}")
-    amount = PLAN_AMOUNTS[data.plan]  # fixed by plan, set in Razorpay dashboard
+    if data.plan in PLAN_AMOUNTS:
+        amount = PLAN_AMOUNTS[data.plan]  # fixed by plan
+    elif data.plan.startswith("custom_"):
+        custom_interval = data.plan.split("_", 1)[1]
+        if custom_interval not in {"monthly", "quarterly", "half_yearly", "annual"}:
+            raise HTTPException(status_code=400, detail="Custom plan must be custom_monthly, custom_quarterly, custom_half_yearly or custom_annual.")
+        if not data.custom_amount or data.custom_amount < 100:
+            raise HTTPException(status_code=400, detail="Custom recurring amount must be at least \u20B9 100 per cycle.")
+        if data.custom_amount > 1000000:
+            raise HTTPException(status_code=400, detail="Custom recurring amount cannot exceed \u20B9 10,00,000 per cycle.")
+        amount = int(data.custom_amount)
+    else:
+        raise HTTPException(status_code=400, detail=f"Plan must be one of: {', '.join(PLAN_AMOUNTS.keys())} or custom_<interval>.")
 
     rz = await create_subscription(data.plan, amount, {
         "name": data.name, "email": data.email, "pan_number": data.pan_number,

@@ -166,12 +166,13 @@ class DeleteUserInput(BaseModel):
     reason: str
 
 class SubscriptionInput(BaseModel):
-    plan: str  # "monthly" | "quarterly" | "half_yearly" | "annual"
+    plan: str  # "monthly" | "quarterly" | "half_yearly" | "annual" | "custom_<interval>"
     name: str
     email: str
     phone: str
     pan_number: str
     address: Optional[str] = ""
+    custom_amount: Optional[int] = None  # rupees — required when plan starts with "custom_"
 
 class PANVerifyInput(BaseModel):
     pan: str
