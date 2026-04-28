@@ -112,6 +112,18 @@ async def list_donations(user: dict = Depends(get_current_user)):
     return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
 
 
+@router.get("/donations/mine")
+async def list_my_donations(user: dict = Depends(get_current_user)):
+    """Return the signed-in donor's own donations (latest first), with cover-fee details."""
+    email = (user.get("email") or "").lower().strip()
+    rows = await db.donations.find({"email": email}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    # Defensive defaults so old records (pre-Cover-Fee) render cleanly.
+    for r in rows:
+        r.setdefault("fee_covered", 0)
+        r.setdefault("gross_amount", r.get("amount", 0))
+    return rows
+
+
 @router.get("/donations/{donation_id}/certificate")
 async def download_provisional_receipt(donation_id: str):
     donation = await db.donations.find_one({"id": donation_id}, {"_id": 0})

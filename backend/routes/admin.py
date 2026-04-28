@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 import io
+import csv
 import uuid
 from datetime import datetime, timezone, date, timedelta
 
@@ -24,6 +25,73 @@ router = APIRouter(prefix="/api")
 @router.get("/admin/donations")
 async def admin_list_donations(user: dict = Depends(require_admin)):
     return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+# ── CSV Exports (admin) ──
+def _csv_response(rows: list[dict], headers: list[str], filename: str) -> StreamingResponse:
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({h: ("" if row.get(h) is None else row.get(h)) for h in headers})
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/admin/export/roster.csv")
+async def export_roster_csv(user: dict = Depends(require_admin)):
+    """Master Admin and Admin export. Master Admin row hidden from non-master admins."""
+    query = {}
+    if not is_super_admin(user):
+        query["email"] = {"$ne": super_admin_email()}
+    rows = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(5000)
+    for r in rows:
+        r["specializations"] = ", ".join(r.get("specializations", []) or [])
+        r["badges"] = ", ".join(r.get("badges", []) or [])
+    headers = [
+        "name", "email", "phone", "role", "designation", "status",
+        "pan_number", "aadhaar_number", "address", "age", "dob",
+        "volunteer_hours", "specializations", "badges",
+        "pan_verified", "aadhaar_verified", "merchandise_issued",
+        "specialization_edits_remaining", "created_at",
+    ]
+    await log_activity("export_roster_csv", "admin", "", user["email"], f"Exported {len(rows)} roster row(s)", "")
+    return _csv_response(rows, headers, f"hhf_roster_{date.today().isoformat()}.csv")
+
+
+@router.get("/admin/export/donations.csv")
+async def export_donations_csv(user: dict = Depends(require_admin)):
+    rows = await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(20000)
+    for r in rows:
+        # Defensive defaults so legacy donations export cleanly
+        r.setdefault("fee_covered", 0)
+        r.setdefault("gross_amount", r.get("amount", 0))
+    headers = [
+        "id", "name", "email", "phone", "amount", "fee_covered", "gross_amount",
+        "status", "pan_number", "aadhaar_number", "address",
+        "razorpay_order_id", "razorpay_payment_id", "subscription_id",
+        "message", "created_at",
+    ]
+    await log_activity("export_donations_csv", "admin", "", user["email"], f"Exported {len(rows)} donation row(s)", "")
+    return _csv_response(rows, headers, f"hhf_donations_{date.today().isoformat()}.csv")
+
+
+@router.get("/admin/export/activity.csv")
+async def export_activity_csv(days: int = 90, user: dict = Depends(require_admin)):
+    """Recent activity logs (default 90 days). Master Admin's own actions are
+    hidden from non-master admins to preserve the hidden-master invariant."""
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
+    query: dict = {"timestamp": {"$gte": since.isoformat()}}
+    if not is_super_admin(user):
+        query["user_email"] = {"$ne": super_admin_email()}
+    rows = await db.activity_logs.find(query, {"_id": 0}).sort("timestamp", -1).to_list(50000)
+    headers = ["timestamp", "action", "entity_type", "entity_id", "user_email", "details", "ip"]
+    await log_activity("export_activity_csv", "admin", "", user["email"], f"Exported {len(rows)} activity row(s) (last {days}d)", "")
+    return _csv_response(rows, headers, f"hhf_activity_{date.today().isoformat()}.csv")
 
 
 @router.get("/admin/office-bearer-history")

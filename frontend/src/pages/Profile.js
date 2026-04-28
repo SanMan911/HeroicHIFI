@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { motion } from "framer-motion";
-import { User, Award, Clock, IndianRupee, Camera, Save, Shield, Ticket, Sparkles, Lock } from "lucide-react";
+import { User, Award, Clock, IndianRupee, Camera, Save, Shield, Ticket, Sparkles, Lock, Heart, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 
@@ -37,6 +37,8 @@ export default function Profile() {
   const [editingSpec, setEditingSpec] = useState(false);
   const [specDraft, setSpecDraft] = useState([]);
   const [savingSpec, setSavingSpec] = useState(false);
+  const [myDonations, setMyDonations] = useState([]);
+  const [donationsLoading, setDonationsLoading] = useState(true);
 
   const SPECIALIZATIONS = [
     { key: "education", label: "Education" },
@@ -72,6 +74,18 @@ export default function Profile() {
   };
 
   useEffect(() => { if (user) fetchProfile(); }, [user, fetchProfile]);
+
+  const fetchMyDonations = useCallback(async () => {
+    setDonationsLoading(true);
+    try {
+      const { data } = await api.get("/donations/mine");
+      setMyDonations(Array.isArray(data) ? data : []);
+    } catch {
+      setMyDonations([]);
+    } finally { setDonationsLoading(false); }
+  }, []);
+
+  useEffect(() => { if (user) fetchMyDonations(); }, [user, fetchMyDonations]);
 
   if (authLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
@@ -309,6 +323,94 @@ export default function Profile() {
                   )}
                 </div>
               )}
+
+              {/* My Donations */}
+              <div className="bg-white rounded-2xl border border-sky-100 shadow-sm p-6" data-testid="my-donations-card">
+                <h3 className="text-lg font-medium text-[#0D2847] mb-1 flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                  <IndianRupee className="w-5 h-5 text-[#FF7F00]" /> {lang === "hi" ? "मेरे दान" : "My Donations"}
+                  {myDonations.length > 0 && <span className="text-xs font-normal text-slate-400">({myDonations.length})</span>}
+                </h3>
+                <p className="text-[11px] text-slate-400 mb-4">
+                  {lang === "hi"
+                    ? "अनंतिम रसीदें केवल भुगतान की पुष्टि के बाद उपलब्ध होती हैं। वैध 80G प्रमाणपत्र हर वर्ष 1 अप्रैल को भेजा जाता है।"
+                    : "Provisional receipts are available only after payment confirmation. Your legal 80G certificate is auto-emailed each 1 April."}
+                </p>
+                {donationsLoading ? (
+                  <p className="text-sm text-slate-400 text-center py-6">{lang === "hi" ? "लोड हो रहा है…" : "Loading…"}</p>
+                ) : myDonations.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-sm text-slate-400 mb-3">{lang === "hi" ? "अभी तक कोई दान नहीं।" : "No donations yet."}</p>
+                    <Link to="/donate">
+                      <Button className="bg-[#FF7F00] hover:bg-[#E67200] text-white rounded-full text-sm" data-testid="profile-donate-cta">
+                        <Heart className="w-3.5 h-3.5 mr-1" /> {lang === "hi" ? "अभी दान करें" : "Donate now"}
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5" data-testid="my-donations-list">
+                    {myDonations.map((d) => {
+                      const fee = Number(d.fee_covered || 0);
+                      const gross = Number(d.gross_amount || d.amount || 0);
+                      const amount = Number(d.amount || 0);
+                      const dateStr = d.created_at
+                        ? new Date(d.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—";
+                      const isConfirmed = d.status === "confirmed";
+                      return (
+                        <div key={d.id} className="border border-sky-100 rounded-xl p-3.5 hover:bg-sky-50/30 transition-colors" data-testid={`my-donation-${d.id}`}>
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-base font-semibold text-[#0D2847]" data-testid={`donation-amount-${d.id}`}>₹{amount.toLocaleString("en-IN")}</span>
+                                {fee > 0 && (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-100 to-pink-100 text-rose-700 border border-rose-200 font-medium"
+                                    title={lang === "hi" ? `आपने ₹${fee} शुल्क अवशोषित किया` : `You absorbed ₹${fee.toLocaleString("en-IN")} in processing fees`}
+                                    data-testid={`fee-heart-${d.id}`}
+                                  >
+                                    <Heart className="w-2.5 h-2.5 fill-rose-500 text-rose-500" />
+                                    {lang === "hi" ? "शुल्क कवर" : "fee covered"}
+                                  </span>
+                                )}
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${isConfirmed ? "bg-green-50 text-green-700 border-green-200" : d.status === "rejected" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid={`donation-status-${d.id}`}>
+                                  {d.status}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-1">{dateStr}{d.subscription_id ? ` · ${lang === "hi" ? "आवर्ती" : "recurring"}` : ""}</p>
+                              {fee > 0 && (
+                                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed" data-testid={`fee-breakdown-${d.id}`}>
+                                  {lang === "hi" ? "वचन" : "Pledged"} <strong>₹{amount.toLocaleString("en-IN")}</strong>
+                                  <span className="mx-1.5 text-slate-300">·</span>
+                                  +<strong className="text-rose-600">₹{fee.toLocaleString("en-IN")}</strong> {lang === "hi" ? "शुल्क" : "fees"}
+                                  <span className="mx-1.5 text-slate-300">·</span>
+                                  {lang === "hi" ? "कुल" : "Total"} <strong>₹{gross.toLocaleString("en-IN")}</strong>
+                                </p>
+                              )}
+                            </div>
+                            <div className="shrink-0">
+                              {d.pan_number && isConfirmed ? (
+                                <a
+                                  href={`${process.env.REACT_APP_BACKEND_URL}/api/donations/${d.id}/certificate`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[#FF7F00]/10 text-[#FF7F00] hover:bg-[#FF7F00]/20"
+                                  data-testid={`my-cert-download-${d.id}`}
+                                >
+                                  <Download className="w-3 h-3" /> {lang === "hi" ? "रसीद" : "Receipt"}
+                                </a>
+                              ) : d.pan_number ? (
+                                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] text-slate-400 bg-slate-50 border border-slate-100">
+                                  {lang === "hi" ? "लंबित" : "Pending"}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               {/* Quick Links */}
               <div className="flex flex-wrap gap-3">

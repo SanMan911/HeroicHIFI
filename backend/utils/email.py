@@ -253,6 +253,7 @@ async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: s
                     Thank you for your generous contribution of <strong>₹{amount:,}</strong>{f' ({label})' if label != 'donation' else ''} on {when_str}.
                     A provisional receipt is attached to this email for your records.
                 </p>
+                {fee_paragraph}
                 <div style="background:#FEF2F2;border:1.5px solid #FCA5A5;border-radius:12px;padding:14px;margin:18px 0;">
                     <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#B91C1C;letter-spacing:0.05em;">
                         ⚠ THIS IS NOT AN 80G TAX CERTIFICATE

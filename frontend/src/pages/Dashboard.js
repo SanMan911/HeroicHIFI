@@ -314,6 +314,22 @@ export default function Dashboard() {
   const handleRecomputePatrons = async () => { try { const { data } = await api.post("/admin/patrons/recompute"); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSimulateCharge = async (subId) => { try { const { data } = await api.post(`/admin/subscriptions/${subId}/simulate-charge`); toast.success(`Charge simulated. ${data.patron?.promoted ? "🎉 Promoted to Heroic Patron!" : `Charges: ${data.patron?.charge_count || 0}/6`}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleReplayWebhook = async (eventId) => { try { const { data } = await api.post(`/admin/webhook-events/${eventId}/replay`); toast.success(`Replayed: ${data.side_effects?.join(", ") || "no side effects"}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleExportCsv = async (kind) => {
+    try {
+      const resp = await api.get(`/admin/export/${kind}.csv`, { responseType: "blob" });
+      const blob = new Blob([resp.data], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const today = new Date().toISOString().slice(0, 10);
+      a.download = `hhf_${kind}_${today}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast.success(`${kind} exported`);
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || `Failed to export ${kind}`);
+    }
+  };
   const handlePurgeWebhookEvents = async () => {
     if (!window.confirm("Clear ALL stored Razorpay webhook events? This resets the health widget — useful after rotating the webhook secret. New events will continue to flow in normally.")) return;
     try { const { data } = await api.post("/admin/webhook-events/purge"); toast.success(data.message); fetchData(); }
@@ -469,16 +485,37 @@ export default function Dashboard() {
 
           {/* OVERVIEW */}
           {activeTab === "overview" && stats && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3" data-testid="admin-stats">
-              <StatCard icon={IndianRupee} label="Donations" value={stats.donations.total} sub={`\u20B9${stats.donations.total_amount.toLocaleString("en-IN")}`} color="#FF7F00" />
-              <StatCard icon={CheckCircle} label="Confirmed" value={stats.donations.confirmed} color="#16A34A" />
-              <StatCard icon={Users} label="Volunteers" value={stats.volunteers?.total || 0} color="#1E56A0" />
-              <StatCard icon={Users} label="Members" value={stats.members?.total || 0} color="#7C3AED" />
-              <StatCard icon={ArrowUpDown} label="Pending" value={stats.role_requests?.pending || 0} color="#F59E0B" />
-              <StatCard icon={CalendarDays} label="Events" value={stats.drives?.total || 0} color="#059669" />
-              <StatCard icon={Ticket} label="Tickets" value={stats.tickets?.total || 0} sub={`${stats.tickets?.open || 0} open`} color="#DC2626" />
-              <StatCard icon={Shield} label="Verified PAN" value={stats.verification?.pan_verified || 0} sub={`${stats.verification?.pan_unverified || 0} unverified`} color="#0EA5E9" />
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3" data-testid="admin-stats">
+                <StatCard icon={IndianRupee} label="Donations" value={stats.donations.total} sub={`\u20B9${stats.donations.total_amount.toLocaleString("en-IN")}`} color="#FF7F00" />
+                <StatCard icon={CheckCircle} label="Confirmed" value={stats.donations.confirmed} color="#16A34A" />
+                <StatCard icon={Users} label="Volunteers" value={stats.volunteers?.total || 0} color="#1E56A0" />
+                <StatCard icon={Users} label="Members" value={stats.members?.total || 0} color="#7C3AED" />
+                <StatCard icon={ArrowUpDown} label="Pending" value={stats.role_requests?.pending || 0} color="#F59E0B" />
+                <StatCard icon={CalendarDays} label="Events" value={stats.drives?.total || 0} color="#059669" />
+                <StatCard icon={Ticket} label="Tickets" value={stats.tickets?.total || 0} sub={`${stats.tickets?.open || 0} open`} color="#DC2626" />
+                <StatCard icon={Shield} label="Verified PAN" value={stats.verification?.pan_verified || 0} sub={`${stats.verification?.pan_unverified || 0} unverified`} color="#0EA5E9" />
+              </div>
+              <div className="bg-white rounded-2xl border border-sky-100 shadow-sm p-5 mt-6" data-testid="export-data-card">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h3 className="text-base font-semibold text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                    <Download className="w-4 h-4 text-[#1E56A0]" /> Export Data
+                  </h3>
+                  <p className="text-[11px] text-slate-400">CSV exports — open in Excel / Google Sheets. {user.is_super_admin ? "Master Admin row included." : "Master Admin row hidden."}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => handleExportCsv("roster")} className="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-sky-50 text-[#1E56A0] hover:bg-sky-100 border border-sky-200 font-medium" data-testid="export-roster-btn">
+                    <Users className="w-3.5 h-3.5" /> Roster CSV
+                  </button>
+                  <button onClick={() => handleExportCsv("donations")} className="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-amber-50 text-[#FF7F00] hover:bg-amber-100 border border-amber-200 font-medium" data-testid="export-donations-btn">
+                    <IndianRupee className="w-3.5 h-3.5" /> Donations CSV
+                  </button>
+                  <button onClick={() => handleExportCsv("activity")} className="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 font-medium" data-testid="export-activity-btn">
+                    <Activity className="w-3.5 h-3.5" /> Activity Log CSV (90d)
+                  </button>
+                </div>
+              </div>
+            </>
           )}
 
           {/* DONATIONS */}
