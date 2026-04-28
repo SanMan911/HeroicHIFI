@@ -145,6 +145,10 @@ async def get_recognitions():
         {"fy_label": fy_label, "ended_at": None},
         {"_id": 0},
     )
+    most_generous = await db.most_generous_ledger.find_one(
+        {"fy_label": fy_label, "ended_at": None},
+        {"_id": 0},
+    )
     # Recent badge awards (Star Volunteer / Rising Star / etc.) taken from
     # users — we surface the newest 8 to keep the marquee snappy.
     featured_badges = [
@@ -185,9 +189,24 @@ async def get_recognitions():
             "amount": int(top.get("peak_amount", 0)) if top else 0,
             "since": top.get("awarded_at", "") if top else "",
         } if top else None,
+        "most_generous": {
+            "name": most_generous.get("donor_name", "") if most_generous else "",
+            "fee_absorbed": int(most_generous.get("peak_fee", 0)) if most_generous else 0,
+            "pledge_total": int(most_generous.get("peak_pledge", 0)) if most_generous else 0,
+            "since": most_generous.get("awarded_at", "") if most_generous else "",
+        } if most_generous else None,
         "recent_badges": recent,
         "office_bearers": bearers,
     }
+
+
+# ── Most Generous Donor ledger (public history) ──
+@router.get("/most-generous-ledger")
+async def get_most_generous_ledger():
+    """Immutable tenure log of every Most Generous Donor of the Year — who
+    voluntarily absorbed the most in Razorpay processing fees so the foundation
+    received every rupee of every pledge."""
+    return await db.most_generous_ledger.find({}, {"_id": 0}).sort("awarded_at", -1).to_list(500)
 
 
 # ── Top Donor ledger (public history) ──

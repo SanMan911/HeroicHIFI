@@ -15,6 +15,7 @@ const BADGE_COLORS = {
   "Star Volunteer of the Quarter": "bg-purple-900/40 text-purple-300 border-purple-700/50",
   "Star Volunteer of the Year": "bg-red-900/40 text-red-300 border-red-700/50",
   "Top Donor": "bg-orange-900/40 text-orange-300 border-orange-700/50",
+  "Most Generous Donor": "bg-rose-900/40 text-rose-300 border-rose-700/60",
   "Rising Star": "bg-cyan-900/40 text-cyan-300 border-cyan-700/50",
 };
 

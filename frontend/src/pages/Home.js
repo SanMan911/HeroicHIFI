@@ -264,6 +264,9 @@ function RecognitionsTicker() {
   if (data.top_donor?.name) {
     items.push({ icon: Trophy, label: `Top Donor of FY ${data.fy_label}`, name: data.top_donor.name, sub: `Contribution: \u20B9 ${Number(data.top_donor.amount || 0).toLocaleString("en-IN")}` });
   }
+  if (data.most_generous?.name) {
+    items.push({ icon: Heart, label: `Most Generous Donor of FY ${data.fy_label}`, name: data.most_generous.name, sub: `Absorbed \u20B9 ${Number(data.most_generous.fee_absorbed || 0).toLocaleString("en-IN")} in fees` });
+  }
   (data.recent_badges || []).forEach(b => items.push({ icon: Award, label: b.badge, name: b.name }));
   (data.office_bearers || []).forEach(o => items.push({ icon: Compass, label: o.designation, name: o.name }));
   if (!items.length) return null;

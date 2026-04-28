@@ -76,6 +76,12 @@ async def verify_payment(body: dict, request: Request, user: dict = Depends(get_
         await recompute_top_donor()
     except Exception:
         pass
+    # Real-time Most-Generous-Donor recompute (fee-cover ladder).
+    try:
+        from utils.most_generous import recompute_most_generous
+        await recompute_most_generous()
+    except Exception:
+        pass
     # Email the provisional receipt only AFTER Razorpay has confirmed the payment
     donation = await db.donations.find_one({"razorpay_order_id": body["razorpay_order_id"]}, {"_id": 0})
     receipt_sent = False

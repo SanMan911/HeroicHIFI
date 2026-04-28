@@ -6,7 +6,7 @@ AUTO_BADGES = {
     "Generous Soul": lambda u, stats: stats.get("total_donated", 0) >= 10000,
     "Community Builder": lambda u, stats: stats.get("messages_sent", 0) >= 50,
 }
-ADMIN_ONLY_BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Rising Star"]
+ADMIN_ONLY_BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Most Generous Donor", "Rising Star"]
 
 
 async def compute_auto_badges(user_doc):

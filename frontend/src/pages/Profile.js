@@ -21,6 +21,7 @@ const BADGE_COLORS = {
   "Star Volunteer of the Quarter": "bg-purple-100 text-purple-800 border-purple-200",
   "Star Volunteer of the Year": "bg-red-100 text-red-800 border-red-200",
   "Top Donor": "bg-orange-100 text-orange-800 border-orange-200",
+  "Most Generous Donor": "bg-rose-100 text-rose-800 border-rose-200",
   "Rising Star": "bg-cyan-100 text-cyan-800 border-cyan-200",
 };
 
@@ -335,6 +336,31 @@ export default function Profile() {
                     ? "अनंतिम रसीदें केवल भुगतान की पुष्टि के बाद उपलब्ध होती हैं। वैध 80G प्रमाणपत्र हर वर्ष 1 अप्रैल को भेजा जाता है।"
                     : "Provisional receipts are available only after payment confirmation. Your legal 80G certificate is auto-emailed each 1 April."}
                 </p>
+                {/* Lifetime cover-fee warm copy */}
+                {(() => {
+                  const totalFee = myDonations.reduce((s, d) => s + Number(d.fee_covered || 0), 0);
+                  const totalPledge = myDonations.filter(d => Number(d.fee_covered || 0) > 0).reduce((s, d) => s + Number(d.amount || 0), 0);
+                  if (totalFee <= 0) return null;
+                  return (
+                    <div className="bg-gradient-to-br from-rose-50 via-pink-50 to-amber-50 border border-rose-200 rounded-xl p-4 mb-4 flex items-start gap-3" data-testid="lifetime-fee-banner">
+                      <div className="shrink-0 w-9 h-9 rounded-full bg-rose-100 flex items-center justify-center">
+                        <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-rose-800" data-testid="lifetime-fee-headline">
+                          {lang === "hi"
+                            ? <>आपने अब तक <strong>₹{totalFee.toLocaleString("en-IN")}</strong> शुल्क अवशोषित किए हैं</>
+                            : <>You've absorbed <strong>₹{totalFee.toLocaleString("en-IN")}</strong> in processing fees so far 💚</>}
+                        </p>
+                        <p className="text-[12px] text-rose-700/85 mt-1 leading-relaxed">
+                          {lang === "hi"
+                            ? <>इसका मतलब है कि फाउंडेशन को आपके <strong>₹{totalPledge.toLocaleString("en-IN")}</strong> के पूरे वचन का हर रुपया मिला। दिल से धन्यवाद।</>
+                            : <>That means the foundation received every rupee of your <strong>₹{totalPledge.toLocaleString("en-IN")}</strong> pledge — heartfelt thanks.</>}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {donationsLoading ? (
                   <p className="text-sm text-slate-400 text-center py-6">{lang === "hi" ? "लोड हो रहा है…" : "Loading…"}</p>
                 ) : myDonations.length === 0 ? (

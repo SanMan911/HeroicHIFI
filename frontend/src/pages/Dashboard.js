@@ -1176,7 +1176,7 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
   const [designation, setDesignation] = useState(u.designation || "");
   const [leadershipBio, setLeadershipBio] = useState(u.leadership_bio || "");
   const [effectiveDate, setEffectiveDate] = useState("");
-  const BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Rising Star", "Community Builder"];
+  const BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Most Generous Donor", "Rising Star", "Community Builder"];
   const handleSuspend = () => {
     if (suspendReason.trim().length < 5) { toast.error("Please enter a suspension reason (min 5 chars)"); return; }
     if (window.confirm(`Suspend ${u.name}?\nReason: ${suspendReason}`)) {

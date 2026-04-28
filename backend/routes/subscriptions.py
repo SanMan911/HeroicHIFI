@@ -157,6 +157,11 @@ async def subscription_webhook(request: Request):
                 await recompute_top_donor()
             except Exception:
                 pass
+            try:
+                from utils.most_generous import recompute_most_generous
+                await recompute_most_generous()
+            except Exception:
+                pass
             # Auto-email 80G receipt PDF
             try:
                 pdf_bytes = generate_provisional_receipt_pdf(donation_doc)
@@ -223,6 +228,14 @@ async def admin_simulate_charge(sub_id: str, admin: dict = Depends(require_admin
     except Exception as e:
         logger.warning(f"Simulated receipt email failed: {e}")
     promo = await promote_if_qualified(sub["email"])
+    # Real-time recognition recompute (simulated charge counts as confirmed)
+    try:
+        from utils.top_donor import recompute_top_donor
+        from utils.most_generous import recompute_most_generous
+        await recompute_top_donor()
+        await recompute_most_generous()
+    except Exception:
+        pass
     await log_activity("subscription_charge_simulated", "subscription", sub_id, admin["email"],
                        f"email={sub['email']} amount={sub.get('amount', 0)} promoted={promo.get('promoted', False)} receipt_sent={receipt_sent}", "")
     return {"message": "Charge simulated.", "patron": promo, "receipt_sent": receipt_sent}
@@ -317,6 +330,11 @@ async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(requir
                 try:
                     from utils.top_donor import recompute_top_donor
                     await recompute_top_donor()
+                except Exception:
+                    pass
+                try:
+                    from utils.most_generous import recompute_most_generous
+                    await recompute_most_generous()
                 except Exception:
                     pass
                 # Email receipt on replay too
