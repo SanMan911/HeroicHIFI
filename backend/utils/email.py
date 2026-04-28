@@ -12,6 +12,64 @@ except ImportError:
     resend = None
 
 
+async def send_donation_failed_email(donation: dict) -> bool:
+    """Send a warm follow-up when a pending donation is auto-rejected after the
+    24-hour confirmation window. Includes a fresh donation CTA so we recover the
+    intent. Silent no-op (returns False) when the donor email is missing or
+    Resend isn't configured."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    email = (donation.get("email") or "").strip()
+    frontend_url = os.environ.get("FRONTEND_URL", "")
+    donate_link = f"{frontend_url}/donate" if frontend_url else "/donate"
+    name = donation.get("name") or "Friend"
+    amount = int(donation.get("amount") or 0)
+    if not api_key or not resend or not email:
+        logger.info(f"[FAILED-DONATION MOCK] would email {email} re: donation {donation.get('id', '')} (\u20B9{amount}) auto-rejected")
+        return False
+    try:
+        resend.api_key = api_key
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [email],
+            "subject": "Your donation didn't go through \u2014 we'd love to try again",
+            "html": f"""
+            <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#FFFFFF;color:#0D2847;">
+                <div style="background:linear-gradient(135deg,#1E56A0 0%,#163E78 100%);padding:32px 28px;color:#FFFFFF;">
+                    <h1 style="margin:0;font-size:22px;font-weight:600;">A note from Heroic HIFI Foundation</h1>
+                    <p style="margin:6px 0 0 0;font-size:13px;color:#A8C5E8;">Section 8 Non-Profit \u2022 Bhagalpur, Bihar</p>
+                </div>
+                <div style="padding:28px;">
+                    <p style="font-size:14px;line-height:1.6;">
+                        Dear {name},<br/><br/>
+                        We noticed that your generous pledge of <strong>\u20B9{amount:,}</strong> didn't quite make it through our payment partner within the 24-hour confirmation window. This sometimes happens because of a temporary bank or network hiccup &mdash; rarely is it anything more serious.
+                    </p>
+                    <p style="font-size:14px;line-height:1.6;">
+                        We didn't want your kindness to slip silently into the void. If you still wish to support our work, you can complete your contribution in just a couple of clicks below:
+                    </p>
+                    <div style="text-align:center;margin:28px 0;">
+                        <a href="{donate_link}" style="display:inline-block;background:#FF7F00;color:#FFFFFF;padding:14px 32px;border-radius:999px;text-decoration:none;font-weight:600;font-size:14px;">Try Donating Again</a>
+                    </div>
+                    <p style="font-size:13px;line-height:1.6;color:#475569;">
+                        If the previous attempt did succeed and the amount was debited from your account, please reply to this email with the bank reference number so we can investigate \u2014 your contribution is safe and we'll reconcile it manually.
+                    </p>
+                    <hr style="border:none;border-top:1px solid #E2E8F0;margin:24px 0;"/>
+                    <p style="font-size:11px;color:#94A3B8;text-align:center;margin:0;">
+                        Heroic HIFI Foundation \u2022 Section 8 Non-Profit \u2022 Bhagalpur, Bihar<br/>
+                        80G \u00b7 12A registered \u2022 contact@heroichifi.org \u2022 +91 9060460224
+                    </p>
+                </div>
+            </div>
+            """,
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"Auto-reject follow-up emailed to {email} for donation {donation.get('id', '')}")
+        return True
+    except Exception as e:
+        logger.error(f"Auto-reject email error for {email}: {e}")
+        return False
+
+
+
 async def send_otp_email(email: str, otp: str):
     api_key = os.environ.get("RESEND_API_KEY", "")
     if not api_key or not resend:

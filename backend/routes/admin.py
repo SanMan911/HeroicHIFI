@@ -24,8 +24,17 @@ router = APIRouter(prefix="/api")
 # ── Admin Donations ──
 async def _auto_reject_stale_pending() -> int:
     """Mark donations stuck in `pending` for >24 hours as `rejected`. Run lazily
-    on every admin donations list call. Returns the count auto-rejected."""
+    on every admin donations list call. Returns the count auto-rejected. For
+    each flipped donation, fires a warm follow-up email (best-effort) inviting
+    the donor to retry."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    # Pull the soon-to-be-rejected docs first so we have email targets.
+    stale = await db.donations.find(
+        {"status": "pending", "created_at": {"$lt": cutoff.isoformat()}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "amount": 1},
+    ).to_list(500)
+    if not stale:
+        return 0
     res = await db.donations.update_many(
         {"status": "pending", "created_at": {"$lt": cutoff.isoformat()}},
         {"$set": {
@@ -35,6 +44,15 @@ async def _auto_reject_stale_pending() -> int:
             "auto_rejected_reason": "Payment not confirmed within 24 hours.",
         }},
     )
+    # Best-effort follow-up emails (one per flipped donor). Failures are logged
+    # but never block the sweep.
+    from utils.email import send_donation_failed_email
+    for d in stale:
+        if (d.get("email") or "").strip():
+            try:
+                await send_donation_failed_email(d)
+            except Exception:
+                pass
     return int(res.modified_count or 0)
 
 
