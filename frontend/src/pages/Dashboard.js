@@ -8,11 +8,11 @@ import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { motion } from "framer-motion";
-import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, PauseCircle, PlayCircle, Star, ArrowUpDown, CalendarDays, Activity, Plus, Mail, Bell, FileText, ChevronDown, ChevronUp, Crown, Repeat } from "lucide-react";
+import { LayoutDashboard, IndianRupee, Users, MessageSquare, RefreshCw, CheckCircle, Clock, XCircle, Eye, Download, Trash2, UserCog, MessageCircle, Ticket, Shield, Award, Package, PauseCircle, PlayCircle, Star, ArrowUpDown, CalendarDays, Activity, Plus, Mail, Bell, FileText, ChevronDown, ChevronUp, Crown, Repeat, Compass } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_COLORS = { pending: "bg-amber-100 text-amber-800 border-amber-200", confirmed: "bg-green-100 text-green-800 border-green-200", approved: "bg-green-100 text-green-800 border-green-200", rejected: "bg-red-100 text-red-800 border-red-200", failed: "bg-red-100 text-red-800 border-red-200", open: "bg-blue-100 text-blue-800 border-blue-200", responded: "bg-cyan-100 text-cyan-800 border-cyan-200", closed: "bg-slate-100 text-slate-600 border-slate-200" };
-const ROLE_COLORS = { admin: "bg-blue-50 text-blue-700 border-blue-200", volunteer: "bg-green-50 text-green-700 border-green-200", member: "bg-slate-50 text-slate-600 border-slate-200" };
+const ROLE_COLORS = { admin: "bg-blue-50 text-blue-700 border-blue-200", volunteer: "bg-green-50 text-green-700 border-green-200", member: "bg-slate-50 text-slate-600 border-slate-200", donor: "bg-amber-50 text-amber-700 border-amber-200" };
 const MISSIONS = [
   { slug: "mission-shakti", name: "Mission Shakti" }, { slug: "mission-swabhiman", name: "Mission Swabhiman" },
   { slug: "mission-roshni", name: "Mission Roshni" }, { slug: "mission-koi-bhookha-na-soye", name: "Mission Koi Bhookha Na Soye" },
@@ -167,6 +167,11 @@ export default function Dashboard() {
   const handleTicketStatusChange = async (id, status) => { try { await api.put(`/admin/tickets/${id}/status`, { status }); toast.success("Updated"); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleTicketRespond = async (id, response) => { if (!response) return; try { await api.put(`/admin/tickets/${id}/respond`, { response }); toast.success("Sent"); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleToggleWallOfFame = async (email, isOnWall) => { try { if (isOnWall) { await api.delete(`/admin/wall-of-fame/${encodeURIComponent(email)}`); } else { await api.post(`/admin/wall-of-fame/${encodeURIComponent(email)}`); } toast.success(isOnWall ? "Removed" : "Added"); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handlePurgeDonations = async () => {
+    const phrase = window.prompt("DANGER: This will archive and delete every donation record.\nType exactly PURGE ALL DONATIONS to confirm:");
+    if (phrase !== "PURGE ALL DONATIONS") { if (phrase !== null) toast.error("Confirmation phrase did not match. Aborted."); return; }
+    try { const { data } = await api.post("/admin/donations/purge-all", { confirm: "PURGE ALL DONATIONS" }); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
   const handleRoleRequestAction = async (id, action) => { try { await api.put(`/admin/role-requests/${id}/${action}`); toast.success(`${action}d`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSubmitRoleRequest = async () => { if (!roleRequestForm.requested_role) return; try { await api.post("/role-requests", roleRequestForm); toast.success("Submitted!"); setRoleRequestForm({ requested_role: "", reason: "" }); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail, err)); } };
   const handlePromotionAction = async (id, action) => { try { await api.put(`/admin/promote-requests/${id}/${action}`); toast.success(`${action}d`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
@@ -357,7 +362,7 @@ export default function Dashboard() {
           )}
 
           {/* DONATIONS */}
-          {activeTab === "donations" && <DonationsPanel donations={donations} onStatusChange={handleStatusChange} />}
+          {activeTab === "donations" && <DonationsPanel donations={donations} onStatusChange={handleStatusChange} canPurge={!!user.is_super_admin} onPurgeAll={handlePurgeDonations} />}
 
           {/* QUERIES */}
           {activeTab === "queries" && <QueriesPanel queries={queries} onStatusChange={handleStatusChange} />}
@@ -680,7 +685,7 @@ export default function Dashboard() {
             <div data-testid="admin-users-list">
               <div className="flex flex-wrap items-center gap-3 mb-3">
                 <span className="text-xs text-slate-500 font-medium">Role:</span>
-                {["all", "admin", "volunteer", "member"].map(r => (<button key={r} onClick={() => setRoleFilter(r)} className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${roleFilter === r ? "bg-[#1E56A0] text-white border-[#1E56A0]" : "bg-white text-slate-500 border-sky-100 hover:bg-sky-50"}`} data-testid={`filter-${r}`}>{r === "all" ? `All (${users.length})` : `${r.charAt(0).toUpperCase() + r.slice(1)} (${users.filter(u => u.role === r).length})`}</button>))}
+                {["all", "admin", "volunteer", "member", "donor"].map(r => (<button key={r} onClick={() => setRoleFilter(r)} className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${roleFilter === r ? "bg-[#1E56A0] text-white border-[#1E56A0]" : "bg-white text-slate-500 border-sky-100 hover:bg-sky-50"}`} data-testid={`filter-${r}`}>{r === "all" ? `All (${users.length})` : `${r.charAt(0).toUpperCase() + r.slice(1)} (${users.filter(u => u.role === r).length})`}</button>))}
               </div>
               <div className="flex flex-wrap items-center gap-2 mb-4" data-testid="spec-filter-row">
                 <span className="text-xs text-slate-500 font-medium">Specialization:</span>
@@ -729,13 +734,27 @@ function ArticleCard({ report }) {
   );
 }
 
-function DonationsPanel({ donations, onStatusChange }) {
+function DonationsPanel({ donations, onStatusChange, canPurge, onPurgeAll }) {
   const [expandedId, setExpandedId] = useState(null);
-  if (!donations.length) return <p className="text-center text-slate-400 py-12">No donations.</p>;
-  return (<div className="space-y-3" data-testid="admin-donations-list">{donations.map(d => (<div key={d.id} className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden"><div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}><div className="flex items-center gap-4 min-w-0"><div className="w-9 h-9 rounded-full bg-[#FF7F00]/10 flex items-center justify-center shrink-0"><IndianRupee className="w-4 h-4 text-[#FF7F00]" /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{d.name}</p><p className="text-xs text-slate-400">{d.email}</p></div></div><div className="flex items-center gap-4 shrink-0"><span className="text-sm font-semibold">{"\u20B9"}{d.amount?.toLocaleString("en-IN")}</span><StatusBadge status={d.status} /></div></div>
-    {expandedId === d.id && (<div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-2"><div className="grid grid-cols-3 gap-3 text-xs"><div><span className="text-slate-400">PAN:</span> {d.pan_number || "—"}</div><div><span className="text-slate-400">Aadhaar:</span> {d.aadhaar_number || "—"}</div><div><span className="text-slate-400">Date:</span> {new Date(d.created_at).toLocaleDateString("en-IN")}</div></div>
-    <div className="flex items-center gap-2 pt-1"><Select value={d.status} onValueChange={val => onStatusChange("donations", d.id, val)}><SelectTrigger className="h-7 text-xs w-32 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
-    {d.pan_number && d.status === "confirmed" ? <a href={`${process.env.REACT_APP_BACKEND_URL}/api/donations/${d.id}/certificate`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-[#FF7F00]/10 text-[#FF7F00] hover:bg-[#FF7F00]/20" data-testid={`download-cert-${d.id}`}><Download className="w-3 h-3" /> Acknowledgment</a> : d.pan_number && <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-400 cursor-not-allowed" title="Available only after Razorpay confirms the payment" data-testid={`download-cert-disabled-${d.id}`}><Download className="w-3 h-3" /> Pending confirmation</span>}</div></div>)}</div>))}</div>);
+  return (
+    <div className="space-y-3" data-testid="admin-donations-list">
+      {canPurge && (
+        <div className="flex items-center justify-between bg-red-50/60 border border-red-200 rounded-xl px-4 py-2.5" data-testid="purge-donations-row">
+          <div>
+            <p className="text-xs font-medium text-red-700">Master-Admin Danger Zone</p>
+            <p className="text-[11px] text-red-500/80">Archives and wipes every donation row. The data is moved to <code className="bg-white/60 px-1 rounded">donations_archive</code> — never actually lost.</p>
+          </div>
+          <button onClick={onPurgeAll} className="shrink-0 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700" data-testid="purge-all-donations-btn">
+            <Trash2 className="w-3.5 h-3.5" /> Purge All Donations
+          </button>
+        </div>
+      )}
+      {!donations.length ? <p className="text-center text-slate-400 py-12">No donations.</p> : donations.map(d => (<div key={d.id} className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden"><div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}><div className="flex items-center gap-4 min-w-0"><div className="w-9 h-9 rounded-full bg-[#FF7F00]/10 flex items-center justify-center shrink-0"><IndianRupee className="w-4 h-4 text-[#FF7F00]" /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{d.name}</p><p className="text-xs text-slate-400">{d.email}</p></div></div><div className="flex items-center gap-4 shrink-0"><span className="text-sm font-semibold">{"\u20B9"}{d.amount?.toLocaleString("en-IN")}</span><StatusBadge status={d.status} /></div></div>
+        {expandedId === d.id && (<div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-2"><div className="grid grid-cols-3 gap-3 text-xs"><div><span className="text-slate-400">PAN:</span> {d.pan_number || "—"}</div><div><span className="text-slate-400">Aadhaar:</span> {d.aadhaar_number || "—"}</div><div><span className="text-slate-400">Date:</span> {new Date(d.created_at).toLocaleDateString("en-IN")}</div></div>
+        <div className="flex items-center gap-2 pt-1"><Select value={d.status} onValueChange={val => onStatusChange("donations", d.id, val)}><SelectTrigger className="h-7 text-xs w-32 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
+        {d.pan_number && d.status === "confirmed" ? <a href={`${process.env.REACT_APP_BACKEND_URL}/api/donations/${d.id}/certificate`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-[#FF7F00]/10 text-[#FF7F00] hover:bg-[#FF7F00]/20" data-testid={`download-cert-${d.id}`}><Download className="w-3 h-3" /> Acknowledgment</a> : d.pan_number && <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-400 cursor-not-allowed" title="Available only after Razorpay confirms the payment" data-testid={`download-cert-disabled-${d.id}`}><Download className="w-3 h-3" /> Pending confirmation</span>}</div></div>)}</div>))}
+    </div>
+  );
 }
 
 function QueriesPanel({ queries, onStatusChange }) {
@@ -764,6 +783,8 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
   const [removeReason, setRemoveReason] = useState("");
   const [showRemove, setShowRemove] = useState(false);
   const [newBadge, setNewBadge] = useState("");
+  const [designation, setDesignation] = useState(u.designation || "");
+  const [leadershipBio, setLeadershipBio] = useState(u.leadership_bio || "");
   const BADGES = ["Star Volunteer of the Month", "Star Volunteer of the Quarter", "Star Volunteer of the Year", "Top Donor", "Rising Star", "Community Builder"];
   const handleSuspend = () => {
     if (suspendReason.trim().length < 5) { toast.error("Please enter a suspension reason (min 5 chars)"); return; }
@@ -780,7 +801,7 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
   return (
     <div className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden" data-testid={`admin-user-${u.email}`}>
       <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center gap-3 min-w-0"><div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${u.status === "suspended" ? "bg-red-100" : "bg-[#1E56A0]/10"}`}><UserCog className={`w-4 h-4 ${u.status === "suspended" ? "text-red-500" : "text-[#1E56A0]"}`} /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{u.name}{u.status === "suspended" && <span className="text-xs text-red-500 ml-1">[SUSPENDED]</span>}{u.pan_verified && <span className="text-[10px] text-green-600 ml-1" title="PAN verified">✓PAN</span>}</p><p className="text-xs text-slate-400">{u.email} {u.specializations?.length > 0 && `| ${u.specializations.join(", ")}`}</p></div></div>
+        <div className="flex items-center gap-3 min-w-0"><div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${u.status === "suspended" ? "bg-red-100" : "bg-[#1E56A0]/10"}`}><UserCog className={`w-4 h-4 ${u.status === "suspended" ? "text-red-500" : "text-[#1E56A0]"}`} /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate flex items-center gap-1.5 flex-wrap">{u.name}{u.status === "suspended" && <span className="text-xs text-red-500 ml-1">[SUSPENDED]</span>}{u.pan_verified && <span className="text-[10px] text-green-600 ml-1" title="PAN verified">✓PAN</span>}{u.role === "admin" && <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-100 to-amber-50 text-amber-800 border border-amber-200 font-medium" title="Mission Steward — a trusted custodian of this non-profit" data-testid={`steward-chip-${u.email}`}><Compass className="w-2.5 h-2.5" />Mission Steward{u.designation && <span className="opacity-80">· {u.designation}</span>}</span>}</p><p className="text-xs text-slate-400">{u.email} {u.specializations?.length > 0 && `| ${u.specializations.join(", ")}`}</p></div></div>
         <div className="flex items-center gap-2 shrink-0"><span className="text-xs text-slate-400">{u.volunteer_hours || 0}h</span>{u.merchandise_issued && <Package className="w-3 h-3 text-green-500" />}<span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[u.role] || ROLE_COLORS.member}`}>{u.role}</span><Eye className="w-4 h-4 text-slate-300" /></div>
       </div>
       {expanded && (
@@ -796,6 +817,34 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
           {u.role === "volunteer" && (<><div><p className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1"><Award className="w-3 h-3" /> Badges</p><div className="flex flex-wrap gap-1 mb-2">{(u.badges || []).map(b => (<span key={b} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100">{b}<button onClick={() => onRemoveBadge(u.email, b)} className="text-red-400 hover:text-red-600">&times;</button></span>))}</div><div className="flex gap-1"><select value={newBadge} onChange={e => setNewBadge(e.target.value)} className="text-xs border rounded-lg px-2 py-1"><option value="">Add badge...</option>{BADGES.filter(b => !(u.badges || []).includes(b)).map(b => <option key={b} value={b}>{b}</option>)}</select>{newBadge && <button onClick={() => { onAddBadge(u.email, newBadge); setNewBadge(""); }} className="text-xs text-[#1E56A0]">Add</button>}</div></div>
           <div className="flex flex-wrap items-end gap-4"><div><label className="text-xs text-slate-400 block mb-1">Hours</label><div className="flex gap-1"><input type="number" value={hours} onChange={e => setHours(parseInt(e.target.value) || 0)} className="w-20 text-xs border rounded-lg px-2 py-1" /><button onClick={() => onUpdate(u.email, { volunteer_hours: hours })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg">Save</button></div></div><label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={u.merchandise_issued || false} onChange={e => onUpdate(u.email, { merchandise_issued: e.target.checked })} className="rounded" /><Package className="w-3 h-3" /> Merch</label></div></>)}
           <div><label className="text-xs text-slate-400 block mb-1">Comments</label><div className="flex gap-1"><textarea value={comments} onChange={e => setComments(e.target.value)} rows={2} className="flex-1 text-xs border rounded-lg px-2 py-1 resize-none" /><button onClick={() => onUpdate(u.email, { admin_comments: comments })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg self-end">Save</button></div></div>
+          {u.role === "admin" && (
+            <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-2" data-testid={`leadership-editor-${u.email}`}>
+              <p className="text-xs font-medium text-amber-900 flex items-center gap-1.5"><Compass className="w-3 h-3" /> Leadership Profile <span className="text-[10px] text-amber-700/70 font-normal">(appears on the public About page)</span></p>
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                <input
+                  placeholder="Designation e.g. Founder & CEO, Secretary, Treasurer"
+                  value={designation}
+                  onChange={e => setDesignation(e.target.value)}
+                  className="sm:col-span-3 text-xs border border-amber-200 rounded-lg px-2 py-1.5"
+                  data-testid={`designation-input-${u.email}`}
+                />
+                <button
+                  onClick={() => onUpdate(u.email, { designation: designation.trim(), leadership_bio: leadershipBio.trim() })}
+                  className="sm:col-span-2 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 font-medium"
+                  data-testid={`save-leadership-${u.email}`}
+                >Save Leadership Profile</button>
+              </div>
+              <textarea
+                placeholder="Short public bio (max 280 chars) — what they lead, what donors/volunteers should reach them for."
+                value={leadershipBio}
+                onChange={e => setLeadershipBio(e.target.value.slice(0, 280))}
+                rows={2}
+                className="w-full text-xs border border-amber-200 rounded-lg px-2 py-1.5 resize-none"
+                data-testid={`bio-input-${u.email}`}
+              />
+              <p className="text-[10px] text-amber-700/70">{leadershipBio.length}/280</p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 pt-2 border-t border-sky-50">
             {u.role !== "admin" && <Select onValueChange={val => { if (window.confirm(`Change role to ${val}?`)) onUpdate(u.email, { role: val }); }}><SelectTrigger className="h-8 text-xs w-40 rounded-lg"><SelectValue placeholder="Change role..." /></SelectTrigger><SelectContent>{u.role !== "volunteer" && <SelectItem value="volunteer">Volunteer</SelectItem>}{u.role !== "member" && <SelectItem value="member">Member</SelectItem>}</SelectContent></Select>}
             {u.pan_number && <button onClick={() => onVerifyPan(u.email)} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-sky-50 text-[#1E56A0] hover:bg-sky-100 border border-sky-200" data-testid={`verify-pan-${u.email}`}><Shield className="w-3 h-3" />{u.pan_verified ? "Re-verify PAN" : "Verify PAN"}</button>}

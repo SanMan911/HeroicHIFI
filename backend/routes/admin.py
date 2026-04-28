@@ -32,6 +32,36 @@ async def admin_update_donation_status(item_id: str, data: StatusUpdate, user: d
     return {"message": "Status updated", "status": data.status}
 
 
+@router.post("/admin/donations/purge-all")
+async def admin_purge_all_donations(body: dict, request: Request, user: dict = Depends(require_admin)):
+    """DESTRUCTIVE: Deletes every donation record. Master-Admin only. Requires
+    typed confirmation phrase ``PURGE ALL DONATIONS`` in the body to prevent
+    accidental clicks. The wiped documents are archived to ``donations_archive``
+    so nothing is ever truly lost."""
+    if not is_super_admin(user):
+        raise HTTPException(status_code=403, detail="Only the Master Admin may purge donations.")
+    if (body or {}).get("confirm") != "PURGE ALL DONATIONS":
+        raise HTTPException(status_code=400, detail="Confirmation phrase mismatch. Type 'PURGE ALL DONATIONS' to proceed.")
+    count = await db.donations.count_documents({})
+    if count == 0:
+        return {"message": "No donations to purge.", "deleted": 0}
+    # Archive first
+    archive_batch_id = str(uuid.uuid4())
+    async for doc in db.donations.find({}):
+        doc.pop("_id", None)
+        doc["archive_batch_id"] = archive_batch_id
+        doc["archived_at"] = datetime.now(timezone.utc).isoformat()
+        doc["archived_by"] = user["email"]
+        await db.donations_archive.insert_one(doc)
+    result = await db.donations.delete_many({})
+    await log_activity(
+        "donations_purged", "donation", archive_batch_id, user["email"],
+        f"Master Admin purged {result.deleted_count} donation records (archived in donations_archive)",
+        request.client.host if request.client else ""
+    )
+    return {"message": f"Purged {result.deleted_count} donations (archived).", "deleted": result.deleted_count, "archive_batch_id": archive_batch_id}
+
+
 # ── Admin Volunteers ──
 @router.get("/admin/volunteers")
 async def admin_list_volunteers(user: dict = Depends(require_admin)):
@@ -68,15 +98,56 @@ async def admin_list_users(user: dict = Depends(require_admin)):
     # Hide the Master Admin from every other admin
     query = {} if is_super_admin(user) else {"email": {"$ne": super_admin_email()}}
     users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    existing_emails = {u["email"] for u in users}
+    # Aggregate donation totals per email (all statuses — so guest donors surface even if still pending)
     donation_totals = {}
+    donor_meta = {}  # email -> {name, phone, pan_number, address, first_seen, last_seen}
     agg = await db.donations.aggregate([
-        {"$match": {"status": {"$in": ["confirmed", "pending"]}}},
-        {"$group": {"_id": "$email", "total": {"$sum": "$amount"}}}
-    ]).to_list(1000)
+        {"$group": {
+            "_id": "$email",
+            "total": {"$sum": {"$cond": [{"$in": ["$status", ["confirmed", "pending"]]}, "$amount", 0]}},
+            "name": {"$last": "$name"},
+            "phone": {"$last": "$phone"},
+            "pan_number": {"$last": "$pan_number"},
+            "aadhaar_number": {"$last": "$aadhaar_number"},
+            "address": {"$last": "$address"},
+            "first_seen": {"$min": "$created_at"},
+            "last_seen": {"$max": "$created_at"},
+        }}
+    ]).to_list(2000)
     for entry in agg:
-        donation_totals[entry["_id"]] = entry["total"]
+        email = entry["_id"]
+        if not email:
+            continue
+        donation_totals[email] = entry["total"]
+        donor_meta[email] = entry
     for u in users:
         u["total_donated"] = donation_totals.get(u["email"], 0)
+    # Surface guest donors (exist in donations but never signed up) as synthetic roster entries
+    for email, meta in donor_meta.items():
+        if email in existing_emails:
+            continue
+        if email == super_admin_email() and not is_super_admin(user):
+            continue
+        users.append({
+            "email": email,
+            "name": meta.get("name") or email.split("@")[0],
+            "role": "donor",
+            "phone": meta.get("phone") or "",
+            "pan_number": meta.get("pan_number") or "",
+            "aadhaar_number": meta.get("aadhaar_number") or "",
+            "address": meta.get("address") or "",
+            "badges": [],
+            "volunteer_hours": 0,
+            "specializations": [],
+            "status": "guest",
+            "is_guest_donor": True,
+            "created_at": meta.get("first_seen") or "",
+            "last_donation_at": meta.get("last_seen") or "",
+            "total_donated": meta.get("total", 0),
+            "email_verified": False,
+            "pan_verified": False,
+        })
     return users
 
 
@@ -101,6 +172,10 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
         updates["merchandise_issued"] = data.merchandise_issued
     if data.admin_comments is not None:
         updates["admin_comments"] = data.admin_comments
+    if data.designation is not None:
+        updates["designation"] = data.designation.strip()[:80]
+    if data.leadership_bio is not None:
+        updates["leadership_bio"] = data.leadership_bio.strip()[:280]
     if data.status is not None:
         updates["status"] = data.status
         if data.status == "suspended":

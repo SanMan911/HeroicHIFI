@@ -82,6 +82,8 @@ class AdminUserUpdate(BaseModel):
     status: Optional[str] = None
     suspended_until: Optional[str] = None
     suspension_reason: Optional[str] = None
+    designation: Optional[str] = None
+    leadership_bio: Optional[str] = None
 
 class BadgeAction(BaseModel):
     badge: str

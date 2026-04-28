@@ -2,11 +2,21 @@ import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { ORG_INFO, MEDIA } from "../data/missions";
 import { motion } from "framer-motion";
-import { Building2, Mail, Phone, MapPin, Eye } from "lucide-react";
+import { Building2, Mail, Phone, MapPin, Eye, Compass, User } from "lucide-react";
+import { useEffect, useState } from "react";
+import api from "../lib/api";
 
 export default function About() {
   const { lang } = useLang();
   const t = translations[lang].about;
+  const [leaders, setLeaders] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      try { const { data } = await api.get("/leadership"); setLeaders(data || []); }
+      catch { setLeaders([]); }
+    })();
+  }, []);
 
   return (
     <div data-testid="about-page">
@@ -51,6 +61,44 @@ export default function About() {
           <p className="text-base sm:text-lg text-stone-600 leading-relaxed max-w-3xl mx-auto">{t.vision_text}</p>
         </div>
       </section>
+
+      {/* Leadership / Mission Stewards */}
+      {leaders.length > 0 && (
+        <section className="py-20 sm:py-24" data-testid="leadership-section">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-xs font-medium text-amber-800 uppercase tracking-[0.18em] mb-4">
+                <Compass className="w-3.5 h-3.5" /> Mission Stewards
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                The hands behind the mission
+              </h2>
+              <p className="text-sm text-stone-500 mt-3 max-w-2xl mx-auto">Office bearers and trustees you can reach out to. They volunteer their time exactly like every other hero in our foundation — the only difference is they also hold the paperwork.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="leadership-grid">
+              {leaders.map(l => (
+                <article key={l.email} className="bg-white rounded-2xl border border-amber-100 shadow-sm p-6 hover:shadow-md transition-shadow" data-testid={`leader-card-${l.email}`}>
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-50 border border-amber-200 flex items-center justify-center overflow-hidden shrink-0">
+                      {l.profile_pic_path
+                        ? <img src={`${process.env.REACT_APP_BACKEND_URL}${l.profile_pic_path}`} alt={l.name} className="w-full h-full object-cover" />
+                        : <User className="w-6 h-6 text-amber-700" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-base font-semibold text-[#0D2847] truncate">{l.name}</p>
+                      {l.designation && <p className="text-xs font-medium text-amber-800 mt-0.5">{l.designation}</p>}
+                      {l.bio && <p className="text-sm text-stone-600 mt-2 leading-relaxed">{l.bio}</p>}
+                      <a href={`mailto:${l.email}`} className="inline-flex items-center gap-1 mt-3 text-xs text-[#1E56A0] hover:underline">
+                        <Mail className="w-3 h-3" /> {l.email}
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Legal Info */}
       <section className="py-20 sm:py-28" data-testid="legal-section">

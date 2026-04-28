@@ -1,9 +1,12 @@
 import io
+import os
 from datetime import datetime, date, timezone, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor
 from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import ParagraphStyle
@@ -17,6 +20,36 @@ DARK = HexColor("#0D2847")
 GRAY = HexColor("#666666")
 RED = HexColor("#B91C1C")
 GREEN = HexColor("#15803D")
+
+
+# ── Register a Unicode font so ₹ (U+20B9) renders correctly ──
+_FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
+_BODY_FONT = "Helvetica"
+_BODY_BOLD = "Helvetica-Bold"
+try:
+    _regular = os.path.join(_FONT_DIR, "DejaVuSans.ttf")
+    _bold = os.path.join(_FONT_DIR, "DejaVuSans-Bold.ttf")
+    if os.path.exists(_regular) and os.path.exists(_bold):
+        pdfmetrics.registerFont(TTFont("DejaVuSans", _regular))
+        pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", _bold))
+        _BODY_FONT = "DejaVuSans"
+        _BODY_BOLD = "DejaVuSans-Bold"
+except Exception:
+    # Fall back to Helvetica if font registration fails for any reason
+    pass
+
+
+def _money(amount) -> str:
+    """Currency string with Rupee symbol that renders only when a Unicode font
+    is available. Falls back to unambiguous ``INR`` prefix otherwise so donors
+    never mistake amounts for US dollars."""
+    try:
+        amt = int(amount or 0)
+    except (TypeError, ValueError):
+        amt = 0
+    if _BODY_FONT == "DejaVuSans":
+        return f"\u20B9 {amt:,}"
+    return f"INR {amt:,}"
 
 
 def fy_for_date(d: date) -> tuple[date, date, str]:
@@ -42,17 +75,17 @@ def _draw_letterhead(c, w, h, title: str, subtitle: str = ""):
     c.rect(22*mm, 22*mm, w - 44*mm, h - 44*mm)
 
     y = h - 45*mm
-    c.setFont("Helvetica-Bold", 18)
+    c.setFont(_BODY_BOLD, 18)
     c.setFillColor(NAVY)
     c.drawCentredString(w/2, y, "HEROIC HIFI FOUNDATION")
     y -= 7*mm
-    c.setFont("Helvetica", 9)
+    c.setFont(_BODY_FONT, 9)
     c.setFillColor(GRAY)
     c.drawCentredString(w/2, y, "Section 8 Company under The Companies Act, 2013")
     y -= 5*mm
     c.drawCentredString(w/2, y, "CIN: U88900BR2024NPL072593")
     y -= 5*mm
-    c.setFont("Helvetica", 7.5)
+    c.setFont(_BODY_FONT, 7.5)
     c.drawCentredString(w/2, y, "C/o Nirbhay Kr. Agnihotry, Village: Korha, Tola: Korha, Mirjanhat, Bhagalpur, Jagdishpur, Bihar 812005")
 
     y -= 12*mm
@@ -61,12 +94,12 @@ def _draw_letterhead(c, w, h, title: str, subtitle: str = ""):
     c.line(35*mm, y, w - 35*mm, y)
 
     y -= 10*mm
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont(_BODY_BOLD, 16)
     c.setFillColor(DARK)
     c.drawCentredString(w/2, y, title)
     if subtitle:
         y -= 6*mm
-        c.setFont("Helvetica", 9)
+        c.setFont(_BODY_FONT, 9)
         c.setFillColor(GRAY)
         c.drawCentredString(w/2, y, subtitle)
     return y
@@ -88,14 +121,14 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
     c.setFillColor(RED)
     c.rect(35*mm, band_top - band_h, w - 70*mm, band_h, fill=1, stroke=0)
     c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(_BODY_BOLD, 11)
     c.drawCentredString(w/2, band_top - 6*mm, "THIS DOCUMENT CANNOT BE TREATED AS A TAX PAPER")
-    c.setFont("Helvetica", 8)
+    c.setFont(_BODY_FONT, 8)
     c.drawCentredString(w/2, band_top - 10.5*mm, "Not valid for claiming a deduction under Section 80G of the Income Tax Act, 1961.")
     y = band_top - band_h - 10*mm
 
     receipt_no = f"HHF-ACK/{datetime.now(IST).strftime('%Y%m')}/{donation['id'][:8].upper()}"
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(_BODY_BOLD, 9)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, f"Receipt No: {receipt_no}")
     donation_dt = donation.get("created_at", "")[:10] or datetime.now(IST).strftime("%Y-%m-%d")
@@ -107,16 +140,16 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
         ("PAN Number", donation.get("pan_number", "")),
         ("Email", donation.get("email", "")),
         ("Phone", donation.get("phone", "")),
-        ("Amount Received", f"\u20B9 {donation.get('amount', 0):,}"),
+        ("Amount Received", _money(donation.get('amount', 0))),
         ("Donation Type", donation.get("message", "") or "One-time donation"),
         ("Payment Reference", donation.get("razorpay_payment_id", "") or "—"),
         ("Confirmation Status", str(donation.get("status", "pending")).upper()),
     ]
     for label, value in fields:
-        c.setFont("Helvetica-Bold", 9)
+        c.setFont(_BODY_BOLD, 9)
         c.setFillColor(NAVY)
         c.drawString(35*mm, y, f"{label}:")
-        c.setFont("Helvetica", 9)
+        c.setFont(_BODY_FONT, 9)
         c.setFillColor(DARK)
         val_str = str(value)
         if len(val_str) > 70:
@@ -144,13 +177,13 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
     c.rect(35.5*mm, y - box_h + 0.5*mm, w - 71*mm, box_h - 1*mm, fill=1, stroke=0)
     c.setFillColor(DARK)
     y -= 6*mm
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(_BODY_BOLD, 10)
     c.setFillColor(RED)
     c.drawCentredString(w/2, y, "LEGAL DISCLAIMER — PLEASE READ")
     y -= 7*mm
 
     style = ParagraphStyle(
-        "notice", fontName="Helvetica", fontSize=8.5, leading=12,
+        "notice", fontName=_BODY_FONT, fontSize=8.5, leading=12,
         textColor=DARK, alignment=TA_LEFT,
     )
     notice_text = (
@@ -168,11 +201,11 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
     y = box_top - box_h - 10*mm
 
     # Thank-you signature block
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(_BODY_BOLD, 9)
     c.setFillColor(NAVY)
     c.drawString(35*mm, y, "With heartfelt gratitude,")
     y -= 6*mm
-    c.setFont("Helvetica", 9)
+    c.setFont(_BODY_FONT, 9)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, "Heroic HIFI Foundation")
     c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 9060460224")
@@ -198,7 +231,7 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
 
     cert_no = f"HHF-80G/{fy_label}/{(donor.get('email', '') or 'X')[:6].upper()}"
     y -= 12*mm
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(_BODY_BOLD, 9)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, f"Certificate No: {cert_no}")
     c.drawRightString(w - 35*mm, y, f"Issued: {datetime.now(IST).strftime('%d %B %Y')}")
@@ -212,10 +245,10 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
         ("Email", donor.get("email", "")),
     ]
     for label, value in donor_fields:
-        c.setFont("Helvetica-Bold", 9)
+        c.setFont(_BODY_BOLD, 9)
         c.setFillColor(NAVY)
         c.drawString(35*mm, y, f"{label}:")
-        c.setFont("Helvetica", 9)
+        c.setFont(_BODY_FONT, 9)
         c.setFillColor(DARK)
         val_str = str(value)
         if len(val_str) > 80:
@@ -229,16 +262,16 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     c.setLineWidth(0.5)
     c.line(35*mm, y, w - 35*mm, y)
     y -= 7*mm
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(_BODY_BOLD, 10)
     c.setFillColor(NAVY)
     c.drawString(35*mm, y, "Donations during the Financial Year")
     y -= 8*mm
-    c.setFont("Helvetica-Bold", 8.5)
+    c.setFont(_BODY_BOLD, 8.5)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, "Date")
     c.drawString(70*mm, y, "Reference")
     c.drawString(120*mm, y, "Mode")
-    c.drawRightString(w - 35*mm, y, "Amount (\u20B9)")
+    c.drawRightString(w - 35*mm, y, "Amount (INR \u20B9)")
     y -= 4*mm
     c.setStrokeColor(GRAY)
     c.setLineWidth(0.3)
@@ -246,7 +279,7 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     y -= 5*mm
 
     total = 0
-    c.setFont("Helvetica", 8.5)
+    c.setFont(_BODY_FONT, 8.5)
     c.setFillColor(DARK)
     for d in donations:
         if y < 60*mm:
@@ -269,11 +302,11 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     c.setLineWidth(0.8)
     c.line(35*mm, y, w - 35*mm, y)
     y -= 7*mm
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(_BODY_BOLD, 10)
     c.setFillColor(NAVY)
     c.drawString(35*mm, y, f"Total contributions in FY {fy_label}:")
     c.setFillColor(GREEN)
-    c.drawRightString(w - 35*mm, y, f"\u20B9 {total:,}")
+    c.drawRightString(w - 35*mm, y, _money(total))
 
     # 80G legal block
     y -= 14*mm
@@ -282,17 +315,17 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     box_h = 38*mm
     c.rect(35*mm, y - box_h, w - 70*mm, box_h)
     y -= 6*mm
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(_BODY_BOLD, 10)
     c.setFillColor(GREEN)
     c.drawCentredString(w/2, y, "ELIGIBLE FOR 80G TAX DEDUCTION")
     y -= 6*mm
 
     style = ParagraphStyle(
-        "legal", fontName="Helvetica", fontSize=8.5, leading=12,
+        "legal", fontName=_BODY_FONT, fontSize=8.5, leading=12,
         textColor=DARK, alignment=TA_LEFT,
     )
     legal_text = (
-        f"This is to certify that the above donations totalling <b>\u20B9 {total:,}</b> were received from "
+        f"This is to certify that the above donations totalling <b>{_money(total)}</b> were received from "
         f"<b>{donor.get('name', '')}</b> (PAN: <b>{donor.get('pan_number', '')}</b>) during "
         f"the Financial Year <b>{fy_label}</b>. "
         "Heroic HIFI Foundation is registered under <b>Section 80G of the Income Tax Act, 1961</b>, "
@@ -309,11 +342,11 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     if y < 40*mm:
         c.showPage()
         y = h - 60*mm
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(_BODY_BOLD, 9)
     c.setFillColor(NAVY)
     c.drawString(35*mm, y, "For Heroic HIFI Foundation")
     y -= 12*mm
-    c.setFont("Helvetica", 8)
+    c.setFont(_BODY_FONT, 8)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, "Authorised Signatory")
     c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 9060460224")

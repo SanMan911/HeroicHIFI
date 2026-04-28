@@ -131,3 +131,35 @@ async def list_drives():
 @router.get("/wall-of-fame")
 async def get_wall_of_fame():
     return await db.wall_of_fame.find({}, {"_id": 0}).sort("added_at", -1).to_list(100)
+
+
+# ── Leadership / Office Bearers (public) ──
+@router.get("/leadership")
+async def get_leadership():
+    """Public list of office bearers — admins who have a ``designation`` set.
+    Master Admin is included but never explicitly labelled as Master; only the
+    human-readable designation is surfaced. Order: sort_order ascending, then
+    by creation date (founders & older members first)."""
+    cursor = db.users.find(
+        {"role": "admin", "designation": {"$exists": True, "$ne": ""}},
+        {
+            "_id": 0, "password_hash": 0, "pan_number": 0,
+            "aadhaar_number": 0, "address": 0, "phone": 0,
+            "admin_comments": 0, "suspension_reason": 0,
+        },
+    )
+    rows = await cursor.to_list(50)
+    def _sort_key(u):
+        return (u.get("sort_order") or 999, u.get("created_at") or "")
+    rows.sort(key=_sort_key)
+    return [
+        {
+            "name": u.get("name", ""),
+            "designation": u.get("designation", ""),
+            "bio": u.get("leadership_bio", ""),
+            "email": u.get("email", ""),
+            "profile_pic_path": u.get("profile_pic_path", ""),
+        }
+        for u in rows
+    ]
+
