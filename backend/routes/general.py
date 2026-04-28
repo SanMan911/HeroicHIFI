@@ -134,6 +134,71 @@ async def get_wall_of_fame():
     return await db.wall_of_fame.find({}, {"_id": 0}).sort("added_at", -1).to_list(100)
 
 
+# ── Recognitions ticker (public) ──
+@router.get("/recognitions")
+async def get_recognitions():
+    """Live homepage ticker payload — Top Donor of the Year + freshest badge
+    awards across volunteers & members. No auth required."""
+    from utils.top_donor import current_fy
+    _s, _e, fy_label = current_fy()
+    top = await db.top_donor_ledger.find_one(
+        {"fy_label": fy_label, "ended_at": None},
+        {"_id": 0},
+    )
+    # Recent badge awards (Star Volunteer / Rising Star / etc.) taken from
+    # users — we surface the newest 8 to keep the marquee snappy.
+    featured_badges = [
+        "Star Volunteer of the Month",
+        "Star Volunteer of the Quarter",
+        "Star Volunteer of the Year",
+        "Rising Star",
+        "Community Builder",
+        "Century Hero",
+        "Heroic Patron",
+    ]
+    recent = []
+    cursor = db.users.find(
+        {"badges": {"$in": featured_badges}},
+        {"_id": 0, "email": 1, "name": 1, "badges": 1, "profile_pic_path": 1},
+    ).limit(20)
+    async for u in cursor:
+        for b in u.get("badges", []):
+            if b in featured_badges:
+                recent.append({
+                    "name": u.get("name", ""),
+                    "email": u.get("email", ""),
+                    "badge": b,
+                    "profile_pic_path": u.get("profile_pic_path", ""),
+                })
+    recent = recent[:12]
+    # Active office bearers (Chairman/Secretary/Treasurer)
+    bearers = []
+    async for u in db.users.find(
+        {"designation": {"$in": ["Chairman", "Secretary", "Treasurer"]}},
+        {"_id": 0, "name": 1, "designation": 1},
+    ):
+        bearers.append(u)
+    return {
+        "fy_label": fy_label,
+        "top_donor": {
+            "name": top.get("donor_name", "") if top else "",
+            "amount": int(top.get("peak_amount", 0)) if top else 0,
+            "since": top.get("awarded_at", "") if top else "",
+        } if top else None,
+        "recent_badges": recent,
+        "office_bearers": bearers,
+    }
+
+
+# ── Top Donor ledger (public history) ──
+@router.get("/top-donor-ledger")
+async def get_top_donor_ledger():
+    """Immutable tenure log of every Top Donor of the Year — who held the
+    badge, for what period, and the donation amount that took them there."""
+    return await db.top_donor_ledger.find({}, {"_id": 0}).sort("awarded_at", -1).to_list(500)
+
+
+
 # ── Leadership / Office Bearers (public) ──
 @router.get("/office-posts")
 async def get_office_posts():

@@ -136,6 +136,12 @@ async def subscription_webhook(request: Request):
             }
             await db.donations.insert_one(donation_doc)
             donation_doc.pop("_id", None)
+            # Real-time Top-Donor recompute on each recurring charge
+            try:
+                from utils.top_donor import recompute_top_donor
+                await recompute_top_donor()
+            except Exception:
+                pass
             # Auto-email 80G receipt PDF
             try:
                 pdf_bytes = generate_provisional_receipt_pdf(donation_doc)
@@ -280,6 +286,12 @@ async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(requir
                 await db.donations.insert_one(donation_doc)
                 donation_doc.pop("_id", None)
                 side_effects.append("donation recorded")
+                # Real-time Top-Donor recompute on replayed charge
+                try:
+                    from utils.top_donor import recompute_top_donor
+                    await recompute_top_donor()
+                except Exception:
+                    pass
                 # Email receipt on replay too
                 try:
                     pdf_bytes = generate_provisional_receipt_pdf(donation_doc)

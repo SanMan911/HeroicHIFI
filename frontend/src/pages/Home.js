@@ -1,11 +1,14 @@
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { MEDIA, MISSIONS_CLIENT } from "../data/missions";
 import { Button } from "../components/ui/button";
-import { Sparkles, Heart, BookOpen, UtensilsCrossed, TreePine, PawPrint, Shirt, Droplets, ChefHat, ArrowRight, Gift, Umbrella, Flower2 } from "lucide-react";
+import { Sparkles, Heart, BookOpen, UtensilsCrossed, TreePine, PawPrint, Shirt, Droplets, ChefHat, ArrowRight, Gift, Umbrella, Flower2, Trophy, Award, UserPlus, Compass, Star } from "lucide-react";
 import Marquee from "react-fast-marquee";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+import api from "../lib/api";
 
 const iconMap = { Sparkles, Heart, BookOpen, UtensilsCrossed, TreePine, PawPrint, Shirt };
 
@@ -239,10 +242,82 @@ export default function Home() {
   return (
     <div data-testid="home-page">
       <HeroSection />
+      <RecognitionsTicker />
+      <RegisterNudge />
       <MissionsMarquee />
       <MissionsGrid />
       <DrivesSection />
       <CTASection />
     </div>
+  );
+}
+
+function RecognitionsTicker() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try { const r = await api.get("/recognitions"); setData(r.data); } catch { setData(null); }
+    })();
+  }, []);
+  if (!data) return null;
+  const items = [];
+  if (data.top_donor?.name) {
+    items.push({ icon: Trophy, label: `Top Donor of FY ${data.fy_label}`, name: data.top_donor.name, sub: `Contribution: \u20B9 ${Number(data.top_donor.amount || 0).toLocaleString("en-IN")}` });
+  }
+  (data.recent_badges || []).forEach(b => items.push({ icon: Award, label: b.badge, name: b.name }));
+  (data.office_bearers || []).forEach(o => items.push({ icon: Compass, label: o.designation, name: o.name }));
+  if (!items.length) return null;
+  return (
+    <section className="py-5 bg-gradient-to-r from-[#0D2847] via-[#1E56A0] to-[#0D2847] border-y border-amber-500/30" data-testid="recognitions-ticker">
+      <div className="flex items-center gap-3 px-4">
+        <div className="shrink-0 inline-flex items-center gap-2 text-xs text-amber-300 font-medium uppercase tracking-[0.18em]">
+          <Star className="w-3.5 h-3.5" /> Heroes of the Hour
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <Marquee gradient={false} speed={40} pauseOnHover className="text-white">
+            {items.map((it, i) => {
+              const Ic = it.icon;
+              return (
+                <span key={i} className="inline-flex items-center gap-2 mx-8 text-sm" data-testid={`ticker-item-${i}`}>
+                  <Ic className="w-4 h-4 text-amber-300 shrink-0" />
+                  <span className="text-amber-200/90 font-medium">{it.label}:</span>
+                  <span className="text-white font-semibold">{it.name}</span>
+                  {it.sub && <span className="text-white/60 text-xs">· {it.sub}</span>}
+                  <span className="text-amber-500/60 mx-3">{'\u2666'}</span>
+                </span>
+              );
+            })}
+          </Marquee>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RegisterNudge() {
+  const { user } = useAuth();
+  if (user) return null;
+  return (
+    <section className="py-8 bg-gradient-to-r from-amber-50 via-orange-50/60 to-amber-50 border-b border-amber-100" data-testid="register-nudge">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center gap-5 flex-wrap justify-between">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-300 flex items-center justify-center shrink-0">
+            <UserPlus className="w-5 h-5 text-amber-700" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm sm:text-base font-semibold text-[#0D2847]">
+              Already associated with us, or thinking of joining?
+            </p>
+            <p className="text-xs sm:text-sm text-stone-600 mt-0.5 max-w-3xl">
+              Create a free account so every donation you make is <span className="font-medium text-[#0D2847]">logged against your name</span>, your 80G receipts land in your inbox automatically, and you become eligible for annual recognitions like <span className="italic">Top Donor of the Year</span>, <span className="italic">Star Volunteer</span>, and more.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link to="/login"><Button variant="outline" className="border-amber-400 text-amber-800 hover:bg-amber-50 rounded-xl" data-testid="nudge-login-btn">I already have an account</Button></Link>
+          <Link to="/login"><Button className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl" data-testid="nudge-register-btn"><UserPlus className="w-4 h-4 mr-1.5" /> Register &amp; Compete</Button></Link>
+        </div>
+      </div>
+    </section>
   );
 }

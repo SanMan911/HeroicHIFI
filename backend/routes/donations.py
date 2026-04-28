@@ -60,6 +60,12 @@ async def verify_payment(body: dict, request: Request, user: dict = Depends(get_
         {"razorpay_order_id": body["razorpay_order_id"]},
         {"$set": {"status": "confirmed", "razorpay_payment_id": body["razorpay_payment_id"]}},
     )
+    # Real-time Top-Donor recompute once the payment is verified by Razorpay.
+    try:
+        from utils.top_donor import recompute_top_donor
+        await recompute_top_donor()
+    except Exception:
+        pass
     # Email the provisional receipt only AFTER Razorpay has confirmed the payment
     donation = await db.donations.find_one({"razorpay_order_id": body["razorpay_order_id"]}, {"_id": 0})
     receipt_sent = False
