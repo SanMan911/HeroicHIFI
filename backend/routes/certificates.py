@@ -11,6 +11,8 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import ParagraphStyle
 
+from utils.money import amount_in_words
+
 # India Standard Time for FY calculations
 IST = timezone(timedelta(hours=5, minutes=30))
 NAVY = HexColor("#1E56A0")
@@ -141,6 +143,7 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
         ("Email", donation.get("email", "")),
         ("Phone", donation.get("phone", "")),
         ("Amount Received", _money(donation.get('amount', 0))),
+        ("Amount in Words", amount_in_words(donation.get('amount', 0))),
         ("Donation Type", donation.get("message", "") or "One-time donation"),
         ("Payment Reference", donation.get("razorpay_payment_id", "") or "—"),
         ("Confirmation Status", str(donation.get("status", "pending")).upper()),
@@ -308,6 +311,18 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
     c.setFillColor(GREEN)
     c.drawRightString(w - 35*mm, y, _money(total))
 
+    # Amount in words
+    y -= 7*mm
+    c.setFont(_BODY_BOLD, 9)
+    c.setFillColor(NAVY)
+    c.drawString(35*mm, y, "In Words:")
+    c.setFont(_BODY_FONT, 9)
+    c.setFillColor(DARK)
+    words_str = amount_in_words(total)
+    if len(words_str) > 90:
+        words_str = words_str[:87] + "..."
+    c.drawString(57*mm, y, words_str)
+
     # 80G legal block
     y -= 14*mm
     c.setStrokeColor(GREEN)
@@ -325,7 +340,8 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
         textColor=DARK, alignment=TA_LEFT,
     )
     legal_text = (
-        f"This is to certify that the above donations totalling <b>{_money(total)}</b> were received from "
+        f"This is to certify that the above donations totalling <b>{_money(total)}</b> "
+        f"(<b>{amount_in_words(total)}</b>) were received from "
         f"<b>{donor.get('name', '')}</b> (PAN: <b>{donor.get('pan_number', '')}</b>) during "
         f"the Financial Year <b>{fy_label}</b>. "
         "Heroic HIFI Foundation is registered under <b>Section 80G of the Income Tax Act, 1961</b>, "

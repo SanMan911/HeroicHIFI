@@ -181,8 +181,13 @@ async def subscription_webhook(request: Request):
 # ── Heroic Patron — public + admin endpoints ──
 @router.get("/heroic-patrons")
 async def public_list_patrons(limit: int = 50):
-    """Public Wall of Fame patron list — surfaced on /wall-of-fame."""
-    return await list_patrons(limit)
+    """Public Wall of Fame patron list — surfaced on /wall-of-fame.
+    Amounts rounded to the nearest \u20B9100 for donor privacy."""
+    from utils.money import round_to_100
+    rows = await list_patrons(limit)
+    for r in rows:
+        r["patron_total_amount"] = round_to_100(r.get("patron_total_amount"))
+    return rows
 
 
 @router.get("/admin/patrons/summary/{email}")
