@@ -22,9 +22,40 @@ router = APIRouter(prefix="/api")
 
 
 # ── Admin Donations ──
+async def _auto_reject_stale_pending() -> int:
+    """Mark donations stuck in `pending` for >24 hours as `rejected`. Run lazily
+    on every admin donations list call. Returns the count auto-rejected."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    res = await db.donations.update_many(
+        {"status": "pending", "created_at": {"$lt": cutoff.isoformat()}},
+        {"$set": {
+            "status": "rejected",
+            "auto_rejected": True,
+            "auto_rejected_at": datetime.now(timezone.utc).isoformat(),
+            "auto_rejected_reason": "Payment not confirmed within 24 hours.",
+        }},
+    )
+    return int(res.modified_count or 0)
+
+
 @router.get("/admin/donations")
 async def admin_list_donations(user: dict = Depends(require_admin)):
+    auto = await _auto_reject_stale_pending()
+    if auto:
+        await log_activity("donations_auto_rejected", "admin", "", user["email"],
+                           f"Auto-rejected {auto} donation(s) stuck in pending >24h", "")
     return await db.donations.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@router.post("/admin/donations/clear-rejected")
+async def admin_clear_rejected_donations(user: dict = Depends(require_admin)):
+    """Delete all donations marked as `rejected`. Master Admin or any admin
+    may invoke; the action is fully audit-logged."""
+    res = await db.donations.delete_many({"status": "rejected"})
+    deleted = int(res.deleted_count or 0)
+    await log_activity("donations_cleared_rejected", "admin", "", user["email"],
+                       f"Cleared {deleted} rejected donation(s)", "")
+    return {"message": f"Cleared {deleted} rejected donation(s).", "deleted": deleted}
 
 
 # ── CSV Exports (admin) ──

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import api from "../lib/api";
+import { formatDate } from "../lib/dates";
 import { motion } from "framer-motion";
 import { Award, Clock, IndianRupee, Star, Trophy, Crown, Repeat, Heart, Compass, Sparkles, Calendar, ShieldCheck, ExternalLink } from "lucide-react";
 
@@ -18,13 +19,6 @@ const BADGE_COLORS = {
   "Top Donor": "bg-orange-900/40 text-orange-300 border-orange-700/50",
   "Most Generous Donor": "bg-rose-900/40 text-rose-300 border-rose-700/60",
   "Rising Star": "bg-cyan-900/40 text-cyan-300 border-cyan-700/50",
-};
-
-const formatDate = (iso) => {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  } catch { return "—"; }
 };
 
 const slugify = (name) => (name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "hero";

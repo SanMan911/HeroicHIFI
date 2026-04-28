@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "../lib/api";
+import { formatDate } from "../lib/dates";
 import { motion } from "framer-motion";
 import {
   Trophy, Heart, Crown, Star, Award, Compass, Calendar, Clock,
@@ -22,11 +23,7 @@ const BADGE_COLORS = {
   "Rising Star": "bg-cyan-900/40 text-cyan-300 border-cyan-700/50",
 };
 
-const fmtDate = (iso) => {
-  if (!iso) return "—";
-  try { return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
-  catch { return "—"; }
-};
+const fmtDate = formatDate;
 
 const tenureLabel = (start, end) => {
   if (!start) return "";

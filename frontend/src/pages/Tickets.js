@@ -4,6 +4,7 @@ import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { Navigate } from "react-router-dom";
 import api, { formatApiError } from "../lib/api";
+import { formatDate } from "../lib/dates";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
@@ -127,7 +128,7 @@ export default function Tickets() {
                    <div className="flex items-start justify-between mb-3">
                      <div>
                        <h3 className="text-base font-medium text-[#0D2847]">{tk.subject}</h3>
-                       <p className="text-xs text-slate-400">{new Date(tk.created_at).toLocaleDateString("en-IN")} &middot; {t[tk.priority] || tk.priority}</p>
+                       <p className="text-xs text-slate-400">{formatDate(tk.created_at)} &middot; {t[tk.priority] || tk.priority}</p>
                      </div>
                      <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_STYLES[tk.status] || STATUS_STYLES.open}`}>
                        {tk.status}

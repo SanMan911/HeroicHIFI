@@ -279,13 +279,19 @@ async def get_recognitions():
                     "profile_pic_path": u.get("profile_pic_path", ""),
                 })
     recent = recent[:12]
-    # Active office bearers (Chairman/Secretary/Treasurer)
+    # Active office bearers — pull from the authoritative tenure log
+    # (office_history) where end_date is NULL. Includes EVERY post: Chairman,
+    # Secretary, Treasurer, Event Incharge, Assistant — not just the C/S/T trio.
     bearers = []
-    async for u in db.users.find(
-        {"designation": {"$in": ["Chairman", "Secretary", "Treasurer"]}},
-        {"_id": 0, "name": 1, "designation": 1},
-    ):
-        bearers.append(u)
+    async for o in db.office_history.find(
+        {"end_date": None},
+        {"_id": 0, "user_name": 1, "user_email": 1, "post": 1, "start_date": 1},
+    ).sort("start_date", -1):
+        bearers.append({
+            "name": o.get("user_name", "") or o.get("user_email", ""),
+            "designation": o.get("post", ""),
+            "start_date": o.get("start_date", ""),
+        })
     return {
         "fy_label": fy_label,
         "top_donor": {

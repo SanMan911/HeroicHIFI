@@ -4,6 +4,7 @@ import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { Navigate } from "react-router-dom";
 import api, { formatApiError } from "../lib/api";
+import { formatDate } from "../lib/dates";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { motion } from "framer-motion";
@@ -226,7 +227,7 @@ export default function Community() {
                          </div>
                        </div>
                        <div className="flex items-center gap-2 shrink-0">
-                         <span className="text-[10px] text-slate-400">{new Date(c.last_time).toLocaleDateString("en-IN")}</span>
+                         <span className="text-[10px] text-slate-400">{formatDate(c.last_time)}</span>
                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#1E56A0] text-white">{c.count}</span>
                        </div>
                      </div>

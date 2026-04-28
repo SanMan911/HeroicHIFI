@@ -4,6 +4,7 @@ import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import { Navigate } from "react-router-dom";
 import api, { formatApiError } from "../lib/api";
+import { formatDate } from "../lib/dates";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
@@ -378,9 +379,7 @@ export default function Profile() {
                       const fee = Number(d.fee_covered || 0);
                       const gross = Number(d.gross_amount || d.amount || 0);
                       const amount = Number(d.amount || 0);
-                      const dateStr = d.created_at
-                        ? new Date(d.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-                        : "—";
+                      const dateStr = d.created_at ? formatDate(d.created_at) : "—";
                       const isConfirmed = d.status === "confirmed";
                       return (
                         <div key={d.id} className="border border-sky-100 rounded-xl p-3.5 hover:bg-sky-50/30 transition-colors" data-testid={`my-donation-${d.id}`}>

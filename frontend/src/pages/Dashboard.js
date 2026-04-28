@@ -5,6 +5,7 @@ import { OFFICE_POSTS } from "../data/officePosts";
 import { Navigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import api, { formatApiError } from "../lib/api";
+import { formatDate } from "../lib/dates";
 import { Button } from "../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Input } from "../components/ui/input";
@@ -45,7 +46,7 @@ function EventReportModal({ drive, volunteers, onSubmit, onClose }) {
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-sky-100">
           <h2 className="text-xl font-semibold text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Event Report Required</h2>
-          <p className="text-sm text-slate-500 mt-1">"{drive.title}" on {new Date(drive.date).toLocaleDateString("en-IN")} at {drive.location}</p>
+          <p className="text-sm text-slate-500 mt-1">"{drive.title}" on {formatDate(drive.date)} at {drive.location}</p>
           <p className="text-xs text-red-500 mt-2">This report is mandatory. Please fill all details.</p>
         </div>
         <div className="p-6 space-y-4">
@@ -183,6 +184,11 @@ export default function Dashboard() {
     const phrase = window.prompt("DANGER: This will archive and delete every donation record.\nType exactly PURGE ALL DONATIONS to confirm:");
     if (phrase !== "PURGE ALL DONATIONS") { if (phrase !== null) toast.error("Confirmation phrase did not match. Aborted."); return; }
     try { const { data } = await api.post("/admin/donations/purge-all", { confirm: "PURGE ALL DONATIONS" }); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleClearRejected = async () => {
+    if (!window.confirm("Delete every donation marked as rejected? Auto-rejected (not confirmed within 24 hrs) and manually-rejected entries will both be removed.")) return;
+    try { const { data } = await api.post("/admin/donations/clear-rejected"); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   };
   const handleDownloadAgmReport = async () => {
     const raw = window.prompt("FY start date (e.g. 2025-04-01).\nLeave blank for the previous completed FY:", "");
@@ -405,7 +411,7 @@ export default function Dashboard() {
             {[{ list: upcomingDrives, label: "Upcoming Drives", color: "green", icon: CalendarDays, testId: "upcoming-drives" }, { list: pastDrives, label: "Past Drives", color: "slate", icon: Clock, testId: "past-drives" }].map(({ list, label, color, icon: DIcon, testId }) => list.length > 0 && (
               <div key={testId} className="bg-white rounded-2xl p-6 border border-sky-100 shadow-sm" data-testid={testId}>
                 <h2 className="text-lg font-semibold text-[#0D2847] mb-4 flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}><DIcon className={`w-5 h-5 text-${color}-600`} /> {label}</h2>
-                <div className="space-y-3">{list.map(d => (<div key={d.id} className={`border border-${color}-100 rounded-xl p-4 bg-${color}-50/30`}><p className="text-sm font-semibold text-[#0D2847]">{d.title}</p><p className="text-xs text-slate-500 mt-1">{d.description}</p><div className="flex gap-4 mt-2 text-xs text-slate-400"><span>{new Date(d.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span>{d.location}</span>{d.mission_slug && <span>{d.mission_slug}</span>}</div></div>))}</div>
+                <div className="space-y-3">{list.map(d => (<div key={d.id} className={`border border-${color}-100 rounded-xl p-4 bg-${color}-50/30`}><p className="text-sm font-semibold text-[#0D2847]">{d.title}</p><p className="text-xs text-slate-500 mt-1">{d.description}</p><div className="flex gap-4 mt-2 text-xs text-slate-400"><span>{formatDate(d.date)}</span><span>{d.location}</span>{d.mission_slug && <span>{d.mission_slug}</span>}</div></div>))}</div>
               </div>
             ))}
           </motion.div>
@@ -519,7 +525,7 @@ export default function Dashboard() {
           )}
 
           {/* DONATIONS */}
-          {activeTab === "donations" && <DonationsPanel donations={donations} onStatusChange={handleStatusChange} canPurge={!!user.is_super_admin} onPurgeAll={handlePurgeDonations} />}
+          {activeTab === "donations" && <DonationsPanel donations={donations} onStatusChange={handleStatusChange} canPurge={!!user.is_super_admin} onPurgeAll={handlePurgeDonations} onClearRejected={handleClearRejected} />}
 
           {/* QUERIES */}
           {activeTab === "queries" && <QueriesPanel queries={queries} onStatusChange={handleStatusChange} onRespond={handleRespondToQuery} />}
@@ -702,7 +708,7 @@ export default function Dashboard() {
                   <p className="text-sm font-medium text-red-800 flex items-center gap-2"><FileText className="w-4 h-4" /> {pendingEvents.length} event(s) need a report!</p>
                   {pendingEvents.map(d => (
                     <div key={d.id} className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-red-700">{d.title} — {new Date(d.date).toLocaleDateString("en-IN")}</span>
+                      <span className="text-xs text-red-700">{d.title} — {formatDate(d.date)}</span>
                       <Button size="sm" onClick={() => setShowEventReport(d)} className="bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg h-7" data-testid={`report-btn-${d.id}`}>File Report</Button>
                     </div>
                   ))}
@@ -710,7 +716,7 @@ export default function Dashboard() {
               )}
               {drives.length === 0 ? <p className="text-center text-slate-400 py-12">No events yet.</p> : (
                 <div className="space-y-3">
-                  {["upcoming", "past"].map(type => { const filtered = drives.filter(d => d.drive_type === type); if (!filtered.length) return null; return (<div key={type}><h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">{type === "upcoming" ? "Upcoming" : "Past"}</h3>{filtered.map(d => (<div key={d.id} className={`bg-white rounded-xl border shadow-sm p-4 mb-2 ${type === "upcoming" ? "border-green-100" : "border-slate-100"}`} data-testid={`drive-${d.id}`}><div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-[#0D2847]">{d.title} {d.reported && <span className="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded-full ml-2">Reported</span>}</p><p className="text-xs text-slate-500 mt-1">{d.description}</p><div className="flex gap-4 mt-2 text-xs text-slate-400"><span>{new Date(d.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span>{d.location}</span>{d.mission_slug && <span className="text-[#1E56A0]">{d.mission_slug}</span>}{d.time && <span>{d.time}</span>}</div></div><div className="flex gap-1">{!d.reported && type === "past" && <Button variant="ghost" size="sm" onClick={() => setShowEventReport(d)} className="text-[#1E56A0] hover:bg-sky-50" data-testid={`report-drive-${d.id}`}><FileText className="w-4 h-4" /></Button>}<Button variant="ghost" size="sm" onClick={() => handleDeleteDrive(d.id)} className="text-red-500 hover:bg-red-50" data-testid={`delete-drive-${d.id}`}><Trash2 className="w-4 h-4" /></Button></div></div></div>))}</div>); })}
+                  {["upcoming", "past"].map(type => { const filtered = drives.filter(d => d.drive_type === type); if (!filtered.length) return null; return (<div key={type}><h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">{type === "upcoming" ? "Upcoming" : "Past"}</h3>{filtered.map(d => (<div key={d.id} className={`bg-white rounded-xl border shadow-sm p-4 mb-2 ${type === "upcoming" ? "border-green-100" : "border-slate-100"}`} data-testid={`drive-${d.id}`}><div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-[#0D2847]">{d.title} {d.reported && <span className="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded-full ml-2">Reported</span>}</p><p className="text-xs text-slate-500 mt-1">{d.description}</p><div className="flex gap-4 mt-2 text-xs text-slate-400"><span>{formatDate(d.date)}</span><span>{d.location}</span>{d.mission_slug && <span className="text-[#1E56A0]">{d.mission_slug}</span>}{d.time && <span>{d.time}</span>}</div></div><div className="flex gap-1">{!d.reported && type === "past" && <Button variant="ghost" size="sm" onClick={() => setShowEventReport(d)} className="text-[#1E56A0] hover:bg-sky-50" data-testid={`report-drive-${d.id}`}><FileText className="w-4 h-4" /></Button>}<Button variant="ghost" size="sm" onClick={() => handleDeleteDrive(d.id)} className="text-red-500 hover:bg-red-50" data-testid={`delete-drive-${d.id}`}><Trash2 className="w-4 h-4" /></Button></div></div></div>))}</div>); })}
                 </div>
               )}
             </div>
@@ -732,7 +738,7 @@ export default function Dashboard() {
               </div>
               {emailBlasts.length > 0 && (
                 <div className="space-y-3"><h3 className="text-sm font-semibold text-slate-500 mb-2">Previous Blasts</h3>
-                  {emailBlasts.map(b => (<div key={b.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-[#0D2847]">{b.subject}</p><p className="text-xs text-slate-400">To: {b.target} | Sent: {b.sent_count}/{b.recipient_count} | By: {b.sent_by}</p></div><p className="text-[10px] text-slate-400">{new Date(b.created_at).toLocaleDateString("en-IN")}</p></div></div>))}
+                  {emailBlasts.map(b => (<div key={b.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-[#0D2847]">{b.subject}</p><p className="text-xs text-slate-400">To: {b.target} | Sent: {b.sent_count}/{b.recipient_count} | By: {b.sent_by}</p></div><p className="text-[10px] text-slate-400">{formatDate(b.created_at)}</p></div></div>))}
                 </div>
               )}
             </div>
@@ -980,7 +986,7 @@ export default function Dashboard() {
                             <span className={`px-2 py-0.5 rounded-full border font-medium text-[10px] ${s.mode === "live" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
                               {s.mode === "live" ? "LIVE" : "STUB"}
                             </span>
-                            <span className="text-[10px] text-slate-400">{new Date(s.created_at).toLocaleDateString("en-IN")}</span>
+                            <span className="text-[10px] text-slate-400">{formatDate(s.created_at)}</span>
                           </p>
                         </div>
                         {s.status !== "cancelled" && (
@@ -1100,7 +1106,7 @@ function ArticleCard({ report }) {
   return (
     <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5" data-testid={`article-${report.id}`}>
       <div className="flex items-start justify-between cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div><p className="text-base font-semibold text-[#0D2847]">{report.drive_title}</p><p className="text-xs text-slate-400 mt-1">{new Date(report.created_at).toLocaleDateString("en-IN")} | Star Hero: <span className="text-[#FF7F00] font-medium">{report.star_hero_name}</span></p><p className="text-xs text-slate-500 mt-1">Volunteers: {report.volunteer_names?.join(", ") || "—"}</p></div>
+        <div><p className="text-base font-semibold text-[#0D2847]">{report.drive_title}</p><p className="text-xs text-slate-400 mt-1">{formatDate(report.created_at)} | Star Hero: <span className="text-[#FF7F00] font-medium">{report.star_hero_name}</span></p><p className="text-xs text-slate-500 mt-1">Volunteers: {report.volunteer_names?.join(", ") || "—"}</p></div>
         {expanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
       </div>
       {expanded && (<div className="mt-4 p-4 bg-sky-50/50 rounded-xl"><p className="text-sm text-[#0D2847] whitespace-pre-wrap leading-relaxed">{report.article}</p><div className="grid grid-cols-3 gap-3 mt-4 text-xs"><div><span className="text-slate-400">Time:</span> <span className="text-slate-700">{report.time_spent}</span></div><div><span className="text-slate-400">Resources:</span> <span className="text-slate-700">{report.resources_spent}</span></div><div><span className="text-slate-400">Rating:</span> <span className="text-slate-700">{report.admin_rating}/10</span></div></div>{report.issues && <p className="text-xs text-red-600 mt-2">Issues: {report.issues}</p>}</div>)}
@@ -1108,10 +1114,22 @@ function ArticleCard({ report }) {
   );
 }
 
-function DonationsPanel({ donations, onStatusChange, canPurge, onPurgeAll }) {
+function DonationsPanel({ donations, onStatusChange, canPurge, onPurgeAll, onClearRejected }) {
   const [expandedId, setExpandedId] = useState(null);
+  const rejectedCount = donations.filter((d) => d.status === "rejected").length;
   return (
     <div className="space-y-3" data-testid="admin-donations-list">
+      {rejectedCount > 0 && (
+        <div className="flex items-center justify-between bg-amber-50/70 border border-amber-200 rounded-xl px-4 py-2.5" data-testid="clear-rejected-row">
+          <div>
+            <p className="text-xs font-medium text-amber-800">{rejectedCount} rejected donation{rejectedCount === 1 ? "" : "s"} on file</p>
+            <p className="text-[11px] text-amber-700/80">Pending donations not confirmed within 24 hrs are auto-rejected. Clear them once you've cross-checked the bank statement.</p>
+          </div>
+          <button onClick={onClearRejected} className="shrink-0 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700" data-testid="clear-rejected-btn">
+            <Trash2 className="w-3.5 h-3.5" /> Clear Rejected
+          </button>
+        </div>
+      )}
       {canPurge && (
         <div className="flex items-center justify-between bg-red-50/60 border border-red-200 rounded-xl px-4 py-2.5" data-testid="purge-donations-row">
           <div>
@@ -1124,7 +1142,7 @@ function DonationsPanel({ donations, onStatusChange, canPurge, onPurgeAll }) {
         </div>
       )}
       {!donations.length ? <p className="text-center text-slate-400 py-12">No donations.</p> : donations.map(d => (<div key={d.id} className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden"><div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}><div className="flex items-center gap-4 min-w-0"><div className="w-9 h-9 rounded-full bg-[#FF7F00]/10 flex items-center justify-center shrink-0"><IndianRupee className="w-4 h-4 text-[#FF7F00]" /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{d.name}</p><p className="text-xs text-slate-400">{d.email}</p></div></div><div className="flex items-center gap-4 shrink-0"><span className="text-sm font-semibold">{"\u20B9"}{d.amount?.toLocaleString("en-IN")}</span><StatusBadge status={d.status} /></div></div>
-        {expandedId === d.id && (<div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-2"><div className="grid grid-cols-3 gap-3 text-xs"><div><span className="text-slate-400">PAN:</span> {d.pan_number || "—"}</div><div><span className="text-slate-400">Aadhaar:</span> {d.aadhaar_number || "—"}</div><div><span className="text-slate-400">Date:</span> {new Date(d.created_at).toLocaleDateString("en-IN")}</div></div>
+        {expandedId === d.id && (<div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-2"><div className="grid grid-cols-3 gap-3 text-xs"><div><span className="text-slate-400">PAN:</span> {d.pan_number || "—"}</div><div><span className="text-slate-400">Aadhaar:</span> {d.aadhaar_number || "—"}</div><div><span className="text-slate-400">Date:</span> {formatDate(d.created_at)}</div></div>
         <div className="flex items-center gap-2 pt-1"><Select value={d.status} onValueChange={val => onStatusChange("donations", d.id, val)}><SelectTrigger className="h-7 text-xs w-32 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
         {d.pan_number && d.status === "confirmed" ? <a href={`${process.env.REACT_APP_BACKEND_URL}/api/donations/${d.id}/certificate`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-[#FF7F00]/10 text-[#FF7F00] hover:bg-[#FF7F00]/20" data-testid={`download-cert-${d.id}`}><Download className="w-3 h-3" /> Acknowledgment</a> : d.pan_number && <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-400 cursor-not-allowed" title="Available only after Razorpay confirms the payment" data-testid={`download-cert-disabled-${d.id}`}><Download className="w-3 h-3" /> Pending confirmation</span>}</div></div>)}</div>))}
     </div>
@@ -1159,7 +1177,7 @@ function MessagesPanel({ threads, activeThread, threadMsgs, onLoadThread, onBack
 
 function TicketsPanel({ tickets, onStatusChange, onRespond }) {
   if (!tickets.length) return <p className="text-center text-slate-400 py-12">No tickets.</p>;
-  return (<div className="space-y-3" data-testid="admin-tickets-list">{tickets.map(tk => (<div key={tk.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`admin-ticket-${tk.id}`}><div className="flex items-start justify-between mb-2"><div><p className="text-sm font-medium">{tk.subject}</p><p className="text-xs text-slate-400">{tk.user_name} | {new Date(tk.created_at).toLocaleDateString("en-IN")}</p></div><div className="flex items-center gap-2"><span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${tk.priority === "high" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>{tk.priority}</span><Select value={tk.status} onValueChange={val => onStatusChange(tk.id, val)}><SelectTrigger className="h-6 text-[10px] w-28 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in-progress">In Progress</SelectItem><SelectItem value="responded">Responded</SelectItem><SelectItem value="resolved">Resolved</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div></div><p className="text-xs text-slate-600 mb-2">{tk.description}</p>{tk.admin_response && <div className="bg-sky-50 border border-sky-200 rounded-lg p-2 mb-2"><p className="text-[10px] font-medium text-[#1E56A0]">Response:</p><p className="text-xs">{tk.admin_response}</p></div>}<button onClick={() => onRespond(tk.id, window.prompt("Response:"))} className="text-xs text-[#1E56A0] hover:underline">{tk.admin_response ? "Update" : "Respond"}</button></div>))}</div>);
+  return (<div className="space-y-3" data-testid="admin-tickets-list">{tickets.map(tk => (<div key={tk.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`admin-ticket-${tk.id}`}><div className="flex items-start justify-between mb-2"><div><p className="text-sm font-medium">{tk.subject}</p><p className="text-xs text-slate-400">{tk.user_name} | {formatDate(tk.created_at)}</p></div><div className="flex items-center gap-2"><span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${tk.priority === "high" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>{tk.priority}</span><Select value={tk.status} onValueChange={val => onStatusChange(tk.id, val)}><SelectTrigger className="h-6 text-[10px] w-28 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in-progress">In Progress</SelectItem><SelectItem value="responded">Responded</SelectItem><SelectItem value="resolved">Resolved</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div></div><p className="text-xs text-slate-600 mb-2">{tk.description}</p>{tk.admin_response && <div className="bg-sky-50 border border-sky-200 rounded-lg p-2 mb-2"><p className="text-[10px] font-medium text-[#1E56A0]">Response:</p><p className="text-xs">{tk.admin_response}</p></div>}<button onClick={() => onRespond(tk.id, window.prompt("Response:"))} className="text-xs text-[#1E56A0] hover:underline">{tk.admin_response ? "Update" : "Respond"}</button></div>))}</div>);
 }
 
 function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPan, isOnWall, onToggleWall, canManageOfficePost, onProposeAdmin, onProposeRemoveAdmin, isSuperAdminViewer, regularAdminCount }) {
