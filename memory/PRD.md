@@ -88,7 +88,8 @@ backend/
 25. Admin Patrons tab — list all subscriptions, Recompute, per-sub Simulate-Charge
 26. **Provisional vs Consolidated 80G separation** — per-donation emails are clearly marked PROVISIONAL (no legal weight); legal **consolidated 80G** is emailed once a year on 1 April for the prior FY
 27. **Webhook Health widget** — pass-rate chip, event log, replay button per row
-28. **Two-admin gate on Annual 80G dispatch** — separation-of-duties: drafter cannot self-approve. Admin A creates draft → Admin B approves & dispatches. Daemon also creates a draft (never auto-sends). Notifications fire to all other admins on draft creation.
+28. **Two-admin gate on Annual 80G dispatch** — separation-of-duties: drafter cannot self-approve (unless Master Admin). Admin A drafts → Admin B approves & dispatches. Daemon also creates a draft (never auto-sends).
+29. **Master Admin tier** — `admin@heroichifi.org` is HIDDEN from other admins (roster, activity logs, stats, all per-user endpoints return 404) and has master override on: Annual 80G self-approve, one-step admin promotion (skips multi-admin gate). Master override actions log `override=true` for audit trail. Master Admin badge shown only to super-admin in the dashboard header.
 
 ## Backlog
 ### P0 — see PINNED block at top

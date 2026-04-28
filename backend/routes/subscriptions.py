@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 
 from config import db
 from models.schemas import SubscriptionInput
-from utils.auth import get_current_user, require_admin
+from utils.auth import get_current_user, require_admin, is_super_admin
 from utils.activity import log_activity
 from utils.email import send_donation_receipt_email
 from utils.razorpay_subs import create_subscription, cancel_subscription, verify_webhook_signature, PLAN_AMOUNTS
@@ -402,7 +402,6 @@ async def admin_list_drafts(admin: dict = Depends(require_admin)):
 
 @router.post("/admin/annual-80g/drafts/{draft_id}/approve")
 async def admin_approve_draft(draft_id: str, admin: dict = Depends(require_admin)):
-    from utils.auth import is_super_admin
     draft = await db.annual_80g_drafts.find_one({"id": draft_id})
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
@@ -448,13 +447,13 @@ async def admin_approve_draft(draft_id: str, admin: dict = Depends(require_admin
         "finished_at": datetime.now(timezone.utc).isoformat(),
     })
     await log_activity("annual_80g_approved_and_sent", "system", fs_label, admin["email"],
-                       f"draft={draft_id} drafted_by={draft['drafted_by']} sent={result['sent']} failed={result['failed']}", "")
+                       f"draft={draft_id} drafted_by={draft['drafted_by']} sent={result['sent']} failed={result['failed']}"
+                       + (" override=true" if is_super_admin(admin) and draft['drafted_by'] == admin['email'] else ""), "")
     return {"message": f"Approved and dispatched. Sent {result['sent']}, failed {result['failed']}.", "result": result}
 
 
 @router.post("/admin/annual-80g/drafts/{draft_id}/reject")
 async def admin_reject_draft(draft_id: str, admin: dict = Depends(require_admin)):
-    from utils.auth import is_super_admin
     draft = await db.annual_80g_drafts.find_one({"id": draft_id})
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
@@ -468,7 +467,8 @@ async def admin_reject_draft(draft_id: str, admin: dict = Depends(require_admin)
         "rejected_at": datetime.now(timezone.utc).isoformat(),
     }})
     await log_activity("annual_80g_rejected", "system", draft["fy_label"], admin["email"],
-                       f"draft={draft_id} drafted_by={draft['drafted_by']}", "")
+                       f"draft={draft_id} drafted_by={draft['drafted_by']}"
+                       + (" override=true" if is_super_admin(admin) and draft['drafted_by'] == admin['email'] else ""), "")
     return {"message": "Draft rejected. Drafter can create a fresh draft."}
 
 
