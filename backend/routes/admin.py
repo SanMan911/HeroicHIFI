@@ -1,18 +1,21 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.responses import StreamingResponse
+import io
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 from config import db
 from models.schemas import (
     StatusUpdate, AdminUserUpdate, BadgeAction, TicketResponse, DriveInput,
     EmailBlastInput, EventReportInput, AdminPromotionRequest, DeleteUserInput,
-    PANVerifyInput
+    PANVerifyInput, AdminRemovalRequest
 )
 from utils.auth import require_admin, get_current_user, is_super_admin, super_admin_email
 from utils.activity import log_activity
 from utils.email import send_email_blast, send_notification_email
 from utils.llm import generate_event_article
 from utils.sandbox import verify_pan, verify_aadhaar_pan_link
+from routes.certificates import generate_agm_report_pdf, fy_for_date
 
 router = APIRouter(prefix="/api")
 
@@ -25,10 +28,54 @@ async def admin_list_donations(user: dict = Depends(require_admin)):
 
 @router.get("/admin/office-bearer-history")
 async def admin_office_bearer_history(user: dict = Depends(require_admin)):
-    """Audit trail of every office-bearer post change (assignment, reassignment,
-    clearing). Visible to all admins so the team shares a single source of truth
-    during AGMs and annual filings. Returned newest-first."""
-    return await db.office_bearer_history.find({}, {"_id": 0}).sort("changed_at", -1).to_list(500)
+    """Every office-bearer tenure row — open + closed. Ordered by start_date
+    desc so the most recent assignment surfaces first. Use at AGMs for a clean
+    governance trail."""
+    return await db.office_bearer_tenures.find({}, {"_id": 0}).sort("start_date", -1).to_list(500)
+
+
+@router.get("/admin/agm-report")
+async def admin_agm_report(fy_start: str = "", admin: dict = Depends(require_admin)):
+    """Download the AGM Governance Report PDF for the given Indian FY.
+
+    - ``fy_start`` format: ``YYYY-MM-DD`` (typically ``YYYY-04-01``). When
+      omitted we default to the previous completed FY.
+    - Lists every office-bearer tenure whose period overlaps the FY window
+      (start_date <= fy_end  AND  (end_date is null OR end_date >= fy_start)).
+    """
+    today = datetime.now(timezone.utc).date()
+    if fy_start:
+        try:
+            fy_anchor = date.fromisoformat(fy_start.strip()[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="fy_start must be YYYY-MM-DD")
+    else:
+        # Default: the FY that ENDED most recently (i.e. previous FY).
+        if today.month >= 4:
+            fy_anchor = date(today.year - 1, 4, 1)
+        else:
+            fy_anchor = date(today.year - 2, 4, 1)
+    fy_s, fy_e, fy_label = fy_for_date(fy_anchor)
+    fy_s_iso, fy_e_iso = fy_s.isoformat(), fy_e.isoformat()
+    # Tenures overlapping [fy_s, fy_e]
+    cursor = db.office_bearer_tenures.find(
+        {
+            "start_date": {"$lte": fy_e_iso},
+            "$or": [{"end_date": None}, {"end_date": {"$gte": fy_s_iso}}],
+        },
+        {"_id": 0},
+    )
+    tenures = await cursor.to_list(500)
+    # Sort: Chairman > Secretary > Treasurer > Assistant, then start_date asc
+    order = {"Chairman": 0, "Secretary": 1, "Treasurer": 2, "Assistant": 3}
+    tenures.sort(key=lambda t: (order.get(t.get("post", ""), 99), t.get("start_date") or ""))
+    pdf_bytes = generate_agm_report_pdf(fy_label, fy_s, fy_e, tenures, admin.get("name") or admin.get("email", ""))
+    await log_activity("agm_report_downloaded", "report", "", admin["email"], f"FY {fy_label}, {len(tenures)} tenures", "")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=HHF-AGM-Report-FY{fy_label}.pdf"},
+    )
 
 
 @router.put("/admin/donations/{item_id}/status")
@@ -131,6 +178,7 @@ async def admin_list_users(user: dict = Depends(require_admin)):
         donor_meta[email] = entry
     for u in users:
         u["total_donated"] = donation_totals.get(u["email"], 0)
+        u["is_super_admin"] = is_super_admin(u.get("email", ""))
     # Surface guest donors (exist in donations but never signed up) as synthetic roster entries
     for email, meta in donor_meta.items():
         if email in existing_emails:
@@ -200,6 +248,11 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
                         detail=f"{cleaned} post is currently held by {holder.get('name') or holder.get('email')}. Clear their post first before assigning it to someone else.",
                     )
             updates["designation"] = cleaned
+            # tenure_start mirrored onto user doc for easy read on the roster
+            if cleaned:
+                updates["tenure_start"] = (data.effective_date or datetime.now(timezone.utc).date().isoformat()).strip()[:10]
+            else:
+                updates["tenure_start"] = ""
         if data.leadership_bio is not None:
             updates["leadership_bio"] = data.leadership_bio.strip()[:280]
     if data.status is not None:
@@ -218,22 +271,48 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
             updates["unsuspended_by"] = admin["email"]
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
-    # Capture old designation BEFORE the update, so we can write an audit row
+    # Capture old designation BEFORE the update, so we can write a tenure row
     old_designation = (target.get("designation") or "").strip() if "designation" in updates else None
+    old_tenure_start = (target.get("tenure_start") or "").strip() if "designation" in updates else None
     await db.users.update_one({"email": email}, {"$set": updates})
-    # Write Office-Bearer History when a post changes
+    # Track office-bearer tenure periods (immutable history for AGM reports)
     if old_designation is not None and old_designation != updates.get("designation", ""):
         new_designation = updates.get("designation", "") or ""
-        await db.office_bearer_history.insert_one({
-            "id": str(uuid.uuid4()),
-            "user_email": email,
-            "user_name": target.get("name", ""),
-            "from_post": old_designation or None,
-            "to_post": new_designation or None,
-            "changed_by": admin["email"],
-            "reason": (data.leadership_bio or "").strip()[:280] or None,
-            "changed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        effective = (data.effective_date or datetime.now(timezone.utc).date().isoformat()).strip()[:10]
+        reason = (data.leadership_bio or "").strip()[:280] or None
+        # Close the open tenure row for the OUTGOING post
+        if old_designation:
+            await db.office_bearer_tenures.update_one(
+                {"user_email": email, "post": old_designation, "end_date": None},
+                {"$set": {
+                    "end_date": effective,
+                    "end_reason": reason,
+                    "ended_by": admin["email"],
+                    "ended_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+        # Open a new tenure row for the INCOMING post
+        if new_designation:
+            await db.office_bearer_tenures.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_email": email,
+                "user_name": target.get("name", ""),
+                "post": new_designation,
+                "start_date": effective,
+                "end_date": None,
+                "start_reason": reason,
+                "end_reason": None,
+                "started_by": admin["email"],
+                "ended_by": None,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "ended_at": None,
+            })
+        # Lightweight audit entry in the activity log
+        await log_activity(
+            "office_bearer_changed", "user", email, admin["email"],
+            f"{old_designation or '—'} ({old_tenure_start or '—'}) → {new_designation or 'cleared'} (eff. {effective})",
+            "",
+        )
     changes = ", ".join(f"{k}={v}" for k, v in updates.items())
     await log_activity("admin_user_updated", "user", email, admin["email"], changes, "")
     return {"message": f"User {email} updated successfully"}
@@ -681,7 +760,15 @@ async def mark_all_read(user: dict = Depends(get_current_user)):
     return {"message": "All notifications marked as read"}
 
 
-# ── Admin Promotion (multi-admin approval) ──
+# ── Admin Promotion (unanimous approval of all regular admins) ──
+async def _regular_admin_emails() -> list:
+    """All admins EXCEPT the Master Admin. Super Admin stays aloof from every
+    vote — they can act unilaterally but never count as a regular voter."""
+    sa = super_admin_email()
+    cursor = db.users.find({"role": "admin", "email": {"$ne": sa}}, {"_id": 0, "email": 1})
+    return [u["email"] async for u in cursor]
+
+
 @router.post("/admin/promote-request")
 async def request_admin_promotion(data: AdminPromotionRequest, admin: dict = Depends(require_admin)):
     target_email = data.target_email.lower().strip()
@@ -693,30 +780,39 @@ async def request_admin_promotion(data: AdminPromotionRequest, admin: dict = Dep
     existing = await db.admin_promotions.find_one({"target_email": target_email, "status": "pending"})
     if existing:
         raise HTTPException(status_code=400, detail="A pending promotion request already exists for this user")
-    admin_count = await db.users.count_documents({"role": "admin"})
-    # Master Admin overrides multi-admin gate (master control)
+    regular_voters = await _regular_admin_emails()
+    # Master Admin acts unilaterally; their "request" is immediately approved.
     if is_super_admin(admin):
-        required_approvals = 1
+        required_voters = []
+        initial_approvals = [admin["email"]]
+        status = "approved"
     else:
-        required_approvals = max(1, admin_count - 1)
+        # Unanimous — every regular admin (including the proposer) must approve.
+        required_voters = regular_voters
+        initial_approvals = [admin["email"]]
+        status = "approved" if set(initial_approvals) >= set(required_voters) else "pending"
     doc = {
         "id": str(uuid.uuid4()), "target_email": target_email,
         "target_name": target.get("name", ""),
         "requested_by": admin["email"], "reason": data.reason,
-        "required_approvals": required_approvals,
-        "approvals": [admin["email"]],
+        "required_voters": required_voters,
+        "approvals": initial_approvals,
         "rejections": [],
-        "status": "approved" if required_approvals <= 1 else "pending",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "status": status,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    if doc["status"] == "approved":
+    if status == "approved":
         await db.users.update_one({"email": target_email}, {"$set": {"role": "admin"}})
-        await log_activity("admin_promoted", "user", target_email, admin["email"], "Promoted to admin (sole admin approval)", "")
+        await log_activity("admin_promoted", "user", target_email, admin["email"],
+                           "Promoted to admin (Master Admin action)" if is_super_admin(admin) else "Promoted to admin (unanimous sole-voter)", "")
     else:
-        await log_activity("admin_promotion_requested", "user", target_email, admin["email"], f"Needs {required_approvals} approvals", "")
+        remaining = len(set(required_voters) - set(initial_approvals))
+        await log_activity("admin_promotion_requested", "user", target_email, admin["email"], f"Needs {remaining} more unanimous approvals", "")
     await db.admin_promotions.insert_one(doc)
     doc.pop("_id", None)
-    return {"message": f"{'User promoted to admin.' if doc['status'] == 'approved' else f'Promotion request created. Needs {required_approvals} admin approvals.'}", "promotion": doc}
+    remaining = len(set(required_voters) - set(initial_approvals))
+    msg = "User promoted to admin." if status == "approved" else f"Promotion proposed. Needs unanimous approval from {remaining} more admin(s)."
+    return {"message": msg, "promotion": doc}
 
 
 @router.get("/admin/promote-requests")
@@ -729,19 +825,28 @@ async def approve_promotion(request_id: str, admin: dict = Depends(require_admin
     req = await db.admin_promotions.find_one({"id": request_id, "status": "pending"})
     if not req:
         raise HTTPException(status_code=404, detail="Request not found or already processed")
+    if is_super_admin(admin):
+        # Master Admin can force-approve at any time.
+        approvals = list(set(req.get("approvals", []) + [admin["email"]]))
+        await db.admin_promotions.update_one({"id": request_id}, {"$set": {"approvals": approvals, "status": "approved"}})
+        await db.users.update_one({"email": req["target_email"]}, {"$set": {"role": "admin"}})
+        await log_activity("admin_promoted", "user", req["target_email"], admin["email"], "Promoted by Master Admin override", "")
+        return {"message": f"{req['target_name']} has been promoted to admin (Master Admin override)."}
+    voters = set(req.get("required_voters", []))
+    if admin["email"] not in voters:
+        raise HTTPException(status_code=403, detail="You are not on this vote's roster.")
     if admin["email"] in req.get("approvals", []):
         raise HTTPException(status_code=400, detail="You have already approved this request")
     approvals = req.get("approvals", []) + [admin["email"]]
-    required = req.get("required_approvals", 1)
-    if len(approvals) >= required:
+    if set(approvals) >= voters:
         await db.admin_promotions.update_one({"id": request_id}, {"$set": {"approvals": approvals, "status": "approved"}})
         await db.users.update_one({"email": req["target_email"]}, {"$set": {"role": "admin"}})
-        await log_activity("admin_promoted", "user", req["target_email"], admin["email"], f"Promoted to admin ({len(approvals)}/{required} approvals)", "")
+        await log_activity("admin_promoted", "user", req["target_email"], admin["email"], f"Promoted to admin ({len(approvals)}/{len(voters)} unanimous)", "")
         return {"message": f"{req['target_name']} has been promoted to admin!"}
-    else:
-        await db.admin_promotions.update_one({"id": request_id}, {"$set": {"approvals": approvals}})
-        await log_activity("admin_promotion_approved", "user", req["target_email"], admin["email"], f"Approval {len(approvals)}/{required}", "")
-        return {"message": f"Approved. {len(approvals)}/{required} approvals received."}
+    await db.admin_promotions.update_one({"id": request_id}, {"$set": {"approvals": approvals}})
+    await log_activity("admin_promotion_approved", "user", req["target_email"], admin["email"], f"Approval {len(approvals)}/{len(voters)}", "")
+    remaining = len(voters - set(approvals))
+    return {"message": f"Approved. {remaining} more admin(s) still need to approve."}
 
 
 @router.put("/admin/promote-requests/{request_id}/reject")
@@ -753,6 +858,98 @@ async def reject_promotion(request_id: str, admin: dict = Depends(require_admin)
     await db.admin_promotions.update_one({"id": request_id}, {"$set": {"rejections": rejections, "status": "rejected"}})
     await log_activity("admin_promotion_rejected", "user", req["target_email"], admin["email"], "Promotion rejected", "")
     return {"message": "Promotion request rejected."}
+
+
+# ── Admin Removal (unanimous approval, Super Admin can bypass) ──
+@router.post("/admin/remove-admin-request")
+async def request_admin_removal(data: AdminRemovalRequest, admin: dict = Depends(require_admin)):
+    target_email = data.target_email.lower().strip()
+    if is_super_admin(target_email):
+        raise HTTPException(status_code=403, detail="The Master Admin cannot be removed via this workflow.")
+    target = await db.users.find_one({"email": target_email})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("role") != "admin":
+        raise HTTPException(status_code=400, detail="User is not an admin")
+    existing = await db.admin_removals.find_one({"target_email": target_email, "status": "pending"})
+    if existing:
+        raise HTTPException(status_code=400, detail="A pending removal request already exists for this admin")
+    regular_voters = await _regular_admin_emails()
+    if is_super_admin(admin):
+        required_voters = []
+        initial_approvals = [admin["email"]]
+        status = "approved"
+    else:
+        # Unanimous — all regular admins EXCEPT the target must approve.
+        required_voters = [e for e in regular_voters if e != target_email]
+        initial_approvals = [admin["email"]]
+        status = "approved" if set(initial_approvals) >= set(required_voters) else "pending"
+    doc = {
+        "id": str(uuid.uuid4()), "target_email": target_email,
+        "target_name": target.get("name", ""),
+        "requested_by": admin["email"], "reason": (data.reason or "").strip(),
+        "required_voters": required_voters,
+        "approvals": initial_approvals,
+        "rejections": [],
+        "status": status,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if status == "approved":
+        await db.users.update_one({"email": target_email}, {"$set": {"role": "member"}})
+        await log_activity("admin_demoted", "user", target_email, admin["email"],
+                           "Admin demoted (Master Admin action)" if is_super_admin(admin) else "Admin demoted (unanimous sole-voter)", "")
+    else:
+        remaining = len(set(required_voters) - set(initial_approvals))
+        await log_activity("admin_removal_requested", "user", target_email, admin["email"], f"Needs {remaining} more unanimous approvals", "")
+    await db.admin_removals.insert_one(doc)
+    doc.pop("_id", None)
+    remaining = len(set(required_voters) - set(initial_approvals))
+    msg = "Admin removed." if status == "approved" else f"Removal proposed. Needs unanimous approval from {remaining} more admin(s)."
+    return {"message": msg, "removal": doc}
+
+
+@router.get("/admin/remove-admin-requests")
+async def list_removal_requests(admin: dict = Depends(require_admin)):
+    return await db.admin_removals.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+@router.put("/admin/remove-admin-requests/{request_id}/approve")
+async def approve_removal(request_id: str, admin: dict = Depends(require_admin)):
+    req = await db.admin_removals.find_one({"id": request_id, "status": "pending"})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    if is_super_admin(admin):
+        approvals = list(set(req.get("approvals", []) + [admin["email"]]))
+        await db.admin_removals.update_one({"id": request_id}, {"$set": {"approvals": approvals, "status": "approved"}})
+        await db.users.update_one({"email": req["target_email"]}, {"$set": {"role": "member"}})
+        await log_activity("admin_demoted", "user", req["target_email"], admin["email"], "Removed by Master Admin override", "")
+        return {"message": f"{req['target_name']} has been removed from admin (Master Admin override)."}
+    voters = set(req.get("required_voters", []))
+    if admin["email"] not in voters:
+        raise HTTPException(status_code=403, detail="You are not on this vote's roster (the target admin cannot vote).")
+    if admin["email"] in req.get("approvals", []):
+        raise HTTPException(status_code=400, detail="You have already approved this request")
+    approvals = req.get("approvals", []) + [admin["email"]]
+    if set(approvals) >= voters:
+        await db.admin_removals.update_one({"id": request_id}, {"$set": {"approvals": approvals, "status": "approved"}})
+        await db.users.update_one({"email": req["target_email"]}, {"$set": {"role": "member"}})
+        await log_activity("admin_demoted", "user", req["target_email"], admin["email"], f"Admin removed ({len(approvals)}/{len(voters)} unanimous)", "")
+        return {"message": f"{req['target_name']} has been removed from admin."}
+    await db.admin_removals.update_one({"id": request_id}, {"$set": {"approvals": approvals}})
+    await log_activity("admin_removal_approved", "user", req["target_email"], admin["email"], f"Approval {len(approvals)}/{len(voters)}", "")
+    remaining = len(voters - set(approvals))
+    return {"message": f"Approved. {remaining} more admin(s) still need to approve."}
+
+
+@router.put("/admin/remove-admin-requests/{request_id}/reject")
+async def reject_removal(request_id: str, admin: dict = Depends(require_admin)):
+    req = await db.admin_removals.find_one({"id": request_id, "status": "pending"})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found or already processed")
+    rejections = req.get("rejections", []) + [admin["email"]]
+    await db.admin_removals.update_one({"id": request_id}, {"$set": {"rejections": rejections, "status": "rejected"}})
+    await log_activity("admin_removal_rejected", "user", req["target_email"], admin["email"], "Removal rejected", "")
+    return {"message": "Removal request rejected."}
 
 
 # ── Event Articles (public) ──

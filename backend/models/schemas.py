@@ -84,6 +84,15 @@ class AdminUserUpdate(BaseModel):
     suspension_reason: Optional[str] = None
     designation: Optional[str] = None
     leadership_bio: Optional[str] = None
+    # Date of assuming OR leaving office (YYYY-MM-DD). Required whenever
+    # ``designation`` is being set (start) or cleared (end). If omitted on an
+    # assignment the backend defaults to today (IST).
+    effective_date: Optional[str] = None
+
+
+class AdminRemovalRequest(BaseModel):
+    target_email: str
+    reason: str = ""
 
 class BadgeAction(BaseModel):
     badge: str

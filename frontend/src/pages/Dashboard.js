@@ -112,6 +112,7 @@ export default function Dashboard() {
   const [webhookHealth, setWebhookHealth] = useState(null);
   const [draftRows, setDraftRows] = useState([]);
   const [officeHistory, setOfficeHistory] = useState([]);
+  const [removalRequests, setRemovalRequests] = useState([]);
 
   const isAdmin = user?.role === "admin";
 
@@ -128,7 +129,7 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes, rmRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
@@ -139,6 +140,7 @@ export default function Dashboard() {
         api.get("/admin/webhook-health?limit=15"),
         api.get("/admin/annual-80g/drafts"),
         api.get("/admin/office-bearer-history"),
+        api.get("/admin/remove-admin-requests"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -150,6 +152,7 @@ export default function Dashboard() {
       setWebhookHealth(hookRes.data);
       setDraftRows(draftsRes.data);
       setOfficeHistory(obhRes.data);
+      setRemovalRequests(rmRes.data);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -175,6 +178,38 @@ export default function Dashboard() {
     const phrase = window.prompt("DANGER: This will archive and delete every donation record.\nType exactly PURGE ALL DONATIONS to confirm:");
     if (phrase !== "PURGE ALL DONATIONS") { if (phrase !== null) toast.error("Confirmation phrase did not match. Aborted."); return; }
     try { const { data } = await api.post("/admin/donations/purge-all", { confirm: "PURGE ALL DONATIONS" }); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleDownloadAgmReport = async () => {
+    const raw = window.prompt("FY start date (e.g. 2025-04-01).\nLeave blank for the previous completed FY:", "");
+    if (raw === null) return;
+    const qs = raw.trim() ? `?fy_start=${encodeURIComponent(raw.trim())}` : "";
+    try {
+      const resp = await api.get(`/admin/agm-report${qs}`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      const match = (resp.headers["content-disposition"] || "").match(/filename=([^;]+)/);
+      a.download = (match ? match[1].trim() : "HHF-AGM-Report.pdf").replace(/"/g, "");
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("AGM Report downloaded.");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || "Unable to download AGM report.");
+    }
+  };
+  const handleProposeAdminRemoval = async () => {
+    const email = window.prompt("Email of the admin to remove:");
+    if (!email) return;
+    const reason = window.prompt("Reason for removal (required for AGM minutes):") || "";
+    if (reason.trim().length < 5) { toast.error("A reason of at least 5 characters is required."); return; }
+    try {
+      const { data } = await api.post("/admin/remove-admin-request", { target_email: email.trim(), reason: reason.trim() });
+      toast.success(data.message); fetchData();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleRemovalAction = async (id, action) => {
+    try { const { data } = await api.put(`/admin/remove-admin-requests/${id}/${action}`); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   };
   const handleRoleRequestAction = async (id, action) => { try { await api.put(`/admin/role-requests/${id}/${action}`); toast.success(`${action}d`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSubmitRoleRequest = async () => { if (!roleRequestForm.requested_role) return; try { await api.post("/role-requests", roleRequestForm); toast.success("Submitted!"); setRoleRequestForm({ requested_role: "", reason: "" }); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail, err)); } };
@@ -472,23 +507,59 @@ export default function Dashboard() {
                 <h2 className="text-lg font-semibold text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Current Admins</h2>
                 <div className="flex flex-wrap gap-2 mb-4">{admins.map(a => (<span key={a.email} className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200"><Shield className="w-3 h-3" />{a.name} ({a.email})</span>))}</div>
                 <h3 className="text-sm font-semibold text-slate-500 mb-2">Promote a user to Admin</h3>
-                <p className="text-xs text-slate-400 mb-3">Requires approval from {Math.max(1, admins.length - 1)} other admin(s).</p>
-                <div className="flex gap-2">
-                  <Input placeholder="Email to promote" value={promoteEmail} onChange={e => setPromoteEmail(e.target.value)} className="flex-1 rounded-xl" data-testid="promote-email" />
-                  <Input placeholder="Reason" value={promoteReason} onChange={e => setPromoteReason(e.target.value)} className="flex-1 rounded-xl" data-testid="promote-reason" />
-                  <Button onClick={handlePromote} className="bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-xl" data-testid="promote-btn">Request Promotion</Button>
+                <p className="text-xs text-slate-400 mb-3">{user.is_super_admin ? "Master Admin — you can promote unilaterally." : `Unanimous vote among every regular admin is required (Master Admin stays aloof). ${Math.max(0, admins.filter(a => !a.is_super_admin).length - 1)} more approvals will be needed after you propose.`}</p>
+                <div className="flex gap-2 flex-wrap">
+                  <Input placeholder="Email to promote" value={promoteEmail} onChange={e => setPromoteEmail(e.target.value)} className="flex-1 min-w-[200px] rounded-xl" data-testid="promote-email" />
+                  <Input placeholder="Reason" value={promoteReason} onChange={e => setPromoteReason(e.target.value)} className="flex-1 min-w-[200px] rounded-xl" data-testid="promote-reason" />
+                  <Button onClick={handlePromote} className="bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-xl" data-testid="promote-btn">Propose Promotion</Button>
                 </div>
               </div>
+
+              <div className="bg-white rounded-xl border border-red-100 shadow-sm p-6 mb-6" data-testid="admin-removal-card">
+                <h3 className="text-sm font-semibold text-red-700 mb-1 flex items-center gap-1.5"><XCircle className="w-4 h-4" /> Unseat an Admin</h3>
+                <p className="text-xs text-slate-500 mb-3">{user.is_super_admin ? "Master Admin — you can unseat any admin unilaterally." : "Unanimous vote by every other regular admin is required. The target admin does not vote. Master Admin stays aloof."}</p>
+                <Button onClick={handleProposeAdminRemoval} variant="outline" className="border-red-200 text-red-700 hover:bg-red-50 rounded-xl" data-testid="propose-admin-removal-btn">
+                  <XCircle className="w-4 h-4 mr-1.5" /> Propose Removal
+                </Button>
+              </div>
+
               {promotionRequests.length > 0 && (
-                <div className="space-y-3">
-                  {promotionRequests.map(r => (
-                    <div key={r.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`promo-${r.id}`}>
-                      <div className="flex items-center justify-between">
-                        <div><p className="text-sm font-medium text-[#0D2847]">{r.target_name} <span className="text-xs text-slate-400">({r.target_email})</span></p><p className="text-xs text-slate-500">By: {r.requested_by} | Approvals: {r.approvals?.length || 0}/{r.required_approvals} {r.reason && `| "${r.reason}"`}</p></div>
-                        <div className="flex items-center gap-2">{r.status === "pending" ? (<><Button size="sm" onClick={() => handlePromotionAction(r.id, "approve")} className="bg-green-600 text-white text-xs rounded-lg h-8" data-testid={`approve-promo-${r.id}`}><CheckCircle className="w-3 h-3 mr-1" />Approve</Button><Button size="sm" variant="outline" onClick={() => handlePromotionAction(r.id, "reject")} className="text-red-600 border-red-200 text-xs rounded-lg h-8" data-testid={`reject-promo-${r.id}`}><XCircle className="w-3 h-3 mr-1" />Reject</Button></>) : <StatusBadge status={r.status} />}</div>
+                <div className="space-y-3 mb-6" data-testid="promotion-requests-list">
+                  <h3 className="text-sm font-semibold text-slate-600 flex items-center gap-1.5"><ArrowUpDown className="w-4 h-4" /> Promotion Proposals</h3>
+                  {promotionRequests.map(r => {
+                    const voters = r.required_voters || [];
+                    const approved = r.approvals?.length || 0;
+                    const total = Math.max(approved, voters.length);
+                    const remaining = Math.max(0, voters.length - approved);
+                    return (
+                      <div key={r.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`promo-${r.id}`}>
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="min-w-0"><p className="text-sm font-medium text-[#0D2847]">{r.target_name} <span className="text-xs text-slate-400">({r.target_email})</span></p><p className="text-xs text-slate-500">By: {r.requested_by} | Approvals: {approved}/{total}{remaining ? ` · ${remaining} more needed` : ""} {r.reason && `| "${r.reason}"`}</p></div>
+                          <div className="flex items-center gap-2">{r.status === "pending" ? (<><Button size="sm" onClick={() => handlePromotionAction(r.id, "approve")} className="bg-green-600 text-white text-xs rounded-lg h-8" data-testid={`approve-promo-${r.id}`}><CheckCircle className="w-3 h-3 mr-1" />Approve</Button><Button size="sm" variant="outline" onClick={() => handlePromotionAction(r.id, "reject")} className="text-red-600 border-red-200 text-xs rounded-lg h-8" data-testid={`reject-promo-${r.id}`}><XCircle className="w-3 h-3 mr-1" />Reject</Button></>) : <StatusBadge status={r.status} />}</div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                </div>
+              )}
+
+              {removalRequests.length > 0 && (
+                <div className="space-y-3" data-testid="removal-requests-list">
+                  <h3 className="text-sm font-semibold text-red-600 flex items-center gap-1.5"><XCircle className="w-4 h-4" /> Admin Removal Proposals</h3>
+                  {removalRequests.map(r => {
+                    const voters = r.required_voters || [];
+                    const approved = r.approvals?.length || 0;
+                    const total = Math.max(approved, voters.length);
+                    const remaining = Math.max(0, voters.length - approved);
+                    return (
+                      <div key={r.id} className="bg-white rounded-xl border border-red-100 shadow-sm p-4" data-testid={`removal-${r.id}`}>
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="min-w-0"><p className="text-sm font-medium text-[#0D2847]">Remove {r.target_name} <span className="text-xs text-slate-400">({r.target_email})</span></p><p className="text-xs text-slate-500">By: {r.requested_by} | Approvals: {approved}/{total}{remaining ? ` · ${remaining} more needed` : ""} {r.reason && `| "${r.reason}"`}</p></div>
+                          <div className="flex items-center gap-2">{r.status === "pending" ? (<><Button size="sm" onClick={() => handleRemovalAction(r.id, "approve")} className="bg-red-600 text-white text-xs rounded-lg h-8" data-testid={`approve-removal-${r.id}`}><CheckCircle className="w-3 h-3 mr-1" />Approve Removal</Button><Button size="sm" variant="outline" onClick={() => handleRemovalAction(r.id, "reject")} className="text-slate-600 border-slate-200 text-xs rounded-lg h-8" data-testid={`reject-removal-${r.id}`}><XCircle className="w-3 h-3 mr-1" />Reject</Button></>) : <StatusBadge status={r.status} />}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -710,37 +781,45 @@ export default function Dashboard() {
           {/* ACTIVITY LOG */}
           {activeTab === "activity" && (
             <div className="space-y-6">
-              {/* Office-Bearer History */}
+              {/* Office-Bearer History + AGM download */}
               <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden" data-testid="office-bearer-history">
-                <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-amber-100/50 border-b border-amber-200 flex items-center justify-between">
+                <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-amber-100/50 border-b border-amber-200 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Compass className="w-4 h-4 text-amber-700" />
-                    <p className="text-sm font-semibold text-amber-900">Office-Bearer History</p>
+                    <p className="text-sm font-semibold text-amber-900">Office-Bearer Tenures</p>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-amber-700 border border-amber-200">{officeHistory.length}</span>
                   </div>
-                  <p className="text-[11px] text-amber-700/70">Every Chairman / Secretary / Treasurer / Assistant handover — use at AGMs.</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleDownloadAgmReport}
+                      className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 font-medium"
+                      data-testid="download-agm-report-btn"
+                    >
+                      <Download className="w-3.5 h-3.5" /> AGM Report (PDF)
+                    </button>
+                  </div>
                 </div>
                 <div className="max-h-[40vh] overflow-y-auto">
                   {officeHistory.length === 0
-                    ? <p className="text-center text-slate-400 py-8 text-xs">No post changes yet.</p>
+                    ? <p className="text-center text-slate-400 py-8 text-xs">No tenures yet. Assign a post from the Roster to begin the governance log.</p>
                     : <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-amber-50/60 border-b border-amber-100">
                           <tr>
-                            <th className="text-left p-3 text-amber-900 font-medium">When</th>
-                            <th className="text-left p-3 text-amber-900 font-medium">Person</th>
-                            <th className="text-left p-3 text-amber-900 font-medium">From</th>
-                            <th className="text-left p-3 text-amber-900 font-medium">To</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">Post</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">Office Bearer</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">Start</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">End</th>
                             <th className="text-left p-3 text-amber-900 font-medium">By</th>
                           </tr>
                         </thead>
                         <tbody>
                           {officeHistory.map((h, i) => (
                             <tr key={h.id || i} className="border-b border-amber-50 hover:bg-amber-50/20" data-testid={`obh-row-${h.id || i}`}>
-                              <td className="p-3 text-slate-500 whitespace-nowrap">{new Date(h.changed_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
+                              <td className="p-3"><span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-medium">{h.post}</span></td>
                               <td className="p-3 text-[#0D2847] font-medium">{h.user_name || h.user_email}</td>
-                              <td className="p-3">{h.from_post ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{h.from_post}</span> : <span className="text-slate-300 italic">—</span>}</td>
-                              <td className="p-3">{h.to_post ? <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-medium">{h.to_post}</span> : <span className="text-red-500 italic">cleared</span>}</td>
-                              <td className="p-3 text-slate-500">{h.changed_by}</td>
+                              <td className="p-3 text-slate-600 whitespace-nowrap">{h.start_date || "—"}</td>
+                              <td className="p-3 whitespace-nowrap">{h.end_date ? <span className="text-red-600">{h.end_date}</span> : <span className="text-green-600 font-medium">In office</span>}</td>
+                              <td className="p-3 text-slate-500">{h.ended_by || h.started_by}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -865,31 +944,51 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
           {canManageOfficePost && (
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-2" data-testid={`office-editor-${u.email}`}>
               <p className="text-xs font-medium text-amber-900 flex items-center gap-1.5"><Compass className="w-3 h-3" /> Office-Bearer Post <span className="text-[10px] text-amber-700/70 font-normal">(Master Admin only · Chairman / Secretary / Treasurer are limited to one person each)</span></p>
-              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+              {u.designation && u.tenure_start && (
+                <p className="text-[11px] text-amber-800 bg-white/50 border border-amber-100 rounded-lg px-2 py-1.5" data-testid={`current-tenure-${u.email}`}>
+                  Currently holds <strong>{u.designation}</strong> since <strong>{u.tenure_start}</strong>.
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-center">
                 <select
                   value={designation}
                   onChange={e => setDesignation(e.target.value)}
                   className="sm:col-span-3 text-xs border border-amber-200 rounded-lg px-2 py-1.5 bg-white"
                   data-testid={`designation-select-${u.email}`}
                 >
-                  <option value="">— No post —</option>
+                  <option value="">— Clear post —</option>
                   {OFFICE_POSTS.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
-                <button
-                  onClick={() => onUpdate(u.email, { designation: designation.trim(), leadership_bio: leadershipBio.trim() })}
-                  className="sm:col-span-2 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 font-medium"
-                  data-testid={`save-office-${u.email}`}
-                >Save Post &amp; Bio</button>
+                <div className="sm:col-span-3 flex items-center gap-2">
+                  <label className="text-[10px] text-amber-700/80 whitespace-nowrap">{designation ? "Date of assuming office" : "Date of leaving office"}</label>
+                  <input
+                    type="date"
+                    value={effectiveDate}
+                    onChange={e => setEffectiveDate(e.target.value)}
+                    className="text-xs border border-amber-200 rounded-lg px-2 py-1.5 bg-white"
+                    data-testid={`effective-date-${u.email}`}
+                  />
+                </div>
               </div>
               <textarea
-                placeholder="Short public bio (max 280 chars) — what they lead, what donors/volunteers should reach them for."
+                placeholder={designation ? "Short public bio (max 280 chars) OR reason for assumption." : "Reason for leaving office (optional, for AGM records)."}
                 value={leadershipBio}
                 onChange={e => setLeadershipBio(e.target.value.slice(0, 280))}
                 rows={2}
                 className="w-full text-xs border border-amber-200 rounded-lg px-2 py-1.5 resize-none"
                 data-testid={`bio-input-${u.email}`}
               />
-              <p className="text-[10px] text-amber-700/70">{leadershipBio.length}/280</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] text-amber-700/70">{leadershipBio.length}/280</p>
+                <button
+                  onClick={() => {
+                    if (!effectiveDate) { toast.error("Please pick an effective date."); return; }
+                    onUpdate(u.email, { designation: designation.trim(), leadership_bio: leadershipBio.trim(), effective_date: effectiveDate });
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 font-medium"
+                  data-testid={`save-office-${u.email}`}
+                >{designation ? "Save Post" : "Clear Post & Record Tenure End"}</button>
+              </div>
             </div>
           )}
           <div className="flex flex-wrap gap-2 pt-2 border-t border-sky-50">

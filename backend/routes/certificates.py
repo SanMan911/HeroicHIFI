@@ -360,3 +360,113 @@ def generate_consolidated_80g_pdf(donor: dict, donations: list, fy_label: str,
 def generate_80g_pdf(donation: dict) -> bytes:
     """Deprecated: returns the new provisional receipt for legacy callers."""
     return generate_provisional_receipt_pdf(donation)
+
+
+def generate_agm_report_pdf(
+    fy_label: str,
+    fy_start: date,
+    fy_end: date,
+    tenures: list,
+    generated_by: str,
+) -> bytes:
+    """AGM Governance Report — lists every office-bearer tenure active at any
+    point in the given Indian FY (1 Apr -> 31 Mar). Used at Annual General
+    Meetings and for MCA/Income-Tax filings."""
+    buf = io.BytesIO()
+    c = pdf_canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+
+    y = _draw_letterhead(
+        c, w, h,
+        "AGM GOVERNANCE REPORT",
+        f"Indian FY {fy_label}  |  1 Apr {fy_start.year}  —  31 Mar {fy_end.year}",
+    )
+    y -= 12*mm
+    c.setFont(_BODY_BOLD, 9)
+    c.setFillColor(DARK)
+    c.drawString(35*mm, y, f"Generated: {datetime.now(IST).strftime('%d %b %Y, %H:%M IST')}")
+    c.drawRightString(w - 35*mm, y, f"Prepared by: {generated_by}")
+
+    y -= 10*mm
+    c.setFont(_BODY_BOLD, 11)
+    c.setFillColor(NAVY)
+    c.drawString(35*mm, y, "Office-Bearer Tenures during this FY")
+    y -= 3*mm
+    c.setStrokeColor(ORANGE)
+    c.setLineWidth(1.5)
+    c.line(35*mm, y, w - 35*mm, y)
+    y -= 8*mm
+
+    if not tenures:
+        c.setFont(_BODY_FONT, 10)
+        c.setFillColor(GRAY)
+        c.drawString(35*mm, y, "No office-bearer activity recorded for this Financial Year.")
+    else:
+        # Table header
+        c.setFont(_BODY_BOLD, 9)
+        c.setFillColor(DARK)
+        c.drawString(35*mm, y, "Post")
+        c.drawString(75*mm, y, "Office Bearer")
+        c.drawString(125*mm, y, "Start")
+        c.drawString(150*mm, y, "End")
+        y -= 3*mm
+        c.setStrokeColor(GRAY)
+        c.setLineWidth(0.3)
+        c.line(35*mm, y, w - 35*mm, y)
+        y -= 6*mm
+        c.setFont(_BODY_FONT, 9)
+
+        for t in tenures:
+            if y < 40*mm:
+                c.showPage()
+                _draw_letterhead(c, w, h, "AGM GOVERNANCE REPORT (continued)", f"FY {fy_label}")
+                y = h - 80*mm
+            post = t.get("post", "")
+            name = t.get("user_name", "") or t.get("user_email", "")
+            start = t.get("start_date") or "—"
+            end = t.get("end_date") or "In office"
+            c.setFillColor(NAVY if post in ("Chairman", "Secretary", "Treasurer") else DARK)
+            c.drawString(35*mm, y, post)
+            c.setFillColor(DARK)
+            nm = name if len(name) <= 28 else (name[:27] + "…")
+            c.drawString(75*mm, y, nm)
+            c.drawString(125*mm, y, start)
+            c.setFillColor(GREEN if end == "In office" else RED)
+            c.drawString(150*mm, y, end)
+            c.setFillColor(DARK)
+            y -= 5*mm
+            reason_bits = []
+            if t.get("start_reason"):
+                reason_bits.append(f"Assumed: {t['start_reason']}")
+            if t.get("end_reason"):
+                reason_bits.append(f"Left: {t['end_reason']}")
+            if reason_bits:
+                c.setFont(_BODY_FONT, 7.5)
+                c.setFillColor(GRAY)
+                note = "  ·  ".join(reason_bits)
+                note = note if len(note) <= 130 else (note[:128] + "…")
+                c.drawString(40*mm, y, note)
+                c.setFont(_BODY_FONT, 9)
+                c.setFillColor(DARK)
+                y -= 5*mm
+            y -= 1*mm
+
+    # Signature block
+    if y < 60*mm:
+        c.showPage()
+        _draw_letterhead(c, w, h, "AGM GOVERNANCE REPORT (continued)", f"FY {fy_label}")
+        y = h - 80*mm
+    y -= 16*mm
+    c.setFont(_BODY_BOLD, 9)
+    c.setFillColor(NAVY)
+    c.drawString(35*mm, y, "For Heroic HIFI Foundation")
+    y -= 12*mm
+    c.setFont(_BODY_FONT, 8)
+    c.setFillColor(DARK)
+    c.drawString(35*mm, y, "Authorised Signatory")
+    c.drawRightString(w - 35*mm, y, "Email: hhf.hifi@proton.me | Phone: (+91) 9060460224")
+
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
