@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { motion } from "framer-motion";
-import { User, Award, Clock, IndianRupee, Camera, Save, Shield, Ticket } from "lucide-react";
+import { User, Award, Clock, IndianRupee, Camera, Save, Shield, Ticket, Sparkles, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 
@@ -34,6 +34,19 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [picUrl, setPicUrl] = useState(null);
+  const [editingSpec, setEditingSpec] = useState(false);
+  const [specDraft, setSpecDraft] = useState([]);
+  const [savingSpec, setSavingSpec] = useState(false);
+
+  const SPECIALIZATIONS = [
+    { key: "education", label: "Education" },
+    { key: "healthcare", label: "Healthcare" },
+    { key: "environment", label: "Environment" },
+    { key: "food", label: "Food Distribution" },
+    { key: "women", label: "Women Empowerment" },
+    { key: "animal", label: "Animal Welfare" },
+    { key: "clothing", label: "Clothing Drives" },
+  ];
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -88,6 +101,42 @@ export default function Profile() {
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally { setSaving(false); }
+  };
+
+  const toggleDraftSpec = (key) => {
+    setSpecDraft((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+  };
+
+  const handleStartSpecEdit = () => {
+    setSpecDraft([...(profile.specializations || [])]);
+    setEditingSpec(true);
+  };
+
+  const handleSaveSpec = async () => {
+    if (specDraft.length < 3) {
+      toast.error(lang === "hi" ? "कम से कम 3 क्षेत्र चुनें।" : "Pick at least 3 specializations.");
+      return;
+    }
+    const original = new Set(profile.specializations || []);
+    if (specDraft.length === original.size && specDraft.every((k) => original.has(k))) {
+      toast.info(lang === "hi" ? "कोई परिवर्तन नहीं।" : "No changes to save.");
+      setEditingSpec(false);
+      return;
+    }
+    const remaining = profile.specialization_edits_remaining ?? 2;
+    const msg = remaining === 1
+      ? (lang === "hi" ? "यह आपका अंतिम संपादन है। पुष्टि करें?" : "This will use your LAST lifetime edit. Confirm?")
+      : (lang === "hi" ? `पुष्टि करें? आपके पास ${remaining - 1} संपादन शेष होंगे।` : `Confirm? You will have ${remaining - 1} edit(s) remaining after this.`);
+    if (!window.confirm(msg)) return;
+    setSavingSpec(true);
+    try {
+      await api.put("/profile/specializations", { specializations: specDraft });
+      toast.success(lang === "hi" ? "रुचि क्षेत्र अपडेट हो गए।" : "Specializations updated.");
+      setEditingSpec(false);
+      fetchProfile();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally { setSavingSpec(false); }
   };
 
   return (
@@ -185,6 +234,81 @@ export default function Profile() {
                   {(profile.badges || []).length === 0 && <p className="text-sm text-slate-400">{t.no_badges}</p>}
                 </div>
               </div>
+
+              {/* Specializations (volunteer only) */}
+              {profile.role === "volunteer" && (
+                <div className="bg-white rounded-2xl border border-sky-100 shadow-sm p-6" data-testid="specializations-card">
+                  <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+                    <div>
+                      <h3 className="text-lg font-medium text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                        <Sparkles className="w-5 h-5 text-[#FF7F00]" /> {lang === "hi" ? "मेरे रुचि क्षेत्र" : "My Specializations"}
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        {(profile.specialization_edits_remaining ?? 2) > 0
+                          ? (lang === "hi"
+                            ? `${profile.specialization_edits_remaining} आजीवन संपादन शेष`
+                            : `${profile.specialization_edits_remaining} lifetime edit${profile.specialization_edits_remaining === 1 ? "" : "s"} remaining`)
+                          : (lang === "hi" ? "सभी संपादन उपयोग किए जा चुके हैं" : "All lifetime edits used")}
+                      </p>
+                    </div>
+                    {!editingSpec && (profile.specialization_edits_remaining ?? 2) > 0 && (
+                      <Button variant="outline" size="sm" onClick={handleStartSpecEdit} className="rounded-full gap-1 border-sky-200" data-testid="edit-specs-btn">
+                        <Save className="w-3 h-3" /> {lang === "hi" ? "संपादन" : "Edit"}
+                      </Button>
+                    )}
+                  </div>
+                  {!editingSpec ? (
+                    <div className="flex flex-wrap gap-2" data-testid="specs-list">
+                      {(profile.specializations || []).length === 0
+                        ? <p className="text-sm text-slate-400">{lang === "hi" ? "कोई रुचि क्षेत्र नहीं चुने गए।" : "No specializations selected yet."}</p>
+                        : (profile.specializations || []).map((k) => {
+                          const sp = SPECIALIZATIONS.find((s) => s.key === k);
+                          return (
+                            <span key={k} className="text-xs px-3 py-1.5 rounded-full border font-medium bg-sky-50 text-[#1E56A0] border-sky-200" data-testid={`spec-chip-${k}`}>
+                              {sp ? sp.label : k}
+                            </span>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className={`text-[11px] ${specDraft.length >= 3 ? "text-green-600" : "text-amber-600"}`} data-testid="spec-draft-count">
+                        {lang === "hi" ? `${specDraft.length}/3 चयनित (न्यूनतम)` : `${specDraft.length} of 3 minimum selected`}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {SPECIALIZATIONS.map((s) => {
+                          const active = specDraft.includes(s.key);
+                          return (
+                            <button
+                              key={s.key}
+                              type="button"
+                              onClick={() => toggleDraftSpec(s.key)}
+                              data-testid={`spec-edit-${s.key}-btn`}
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-all ${active ? "border-[#1E56A0] bg-[#1E56A0] text-white" : "border-sky-200 text-slate-600 hover:border-sky-300"}`}
+                            >
+                              {s.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <Button onClick={handleSaveSpec} disabled={savingSpec || specDraft.length < 3} className="bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full px-5 disabled:opacity-50 disabled:cursor-not-allowed" data-testid="save-specs-btn">
+                          {savingSpec ? "..." : (lang === "hi" ? "सहेजें" : "Save")}
+                        </Button>
+                        <Button variant="outline" onClick={() => setEditingSpec(false)} className="rounded-full border-sky-200" data-testid="cancel-specs-btn">
+                          {lang === "hi" ? "रद्द करें" : "Cancel"}
+                        </Button>
+                      </div>
+                      <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                        ⚠️ {lang === "hi"
+                          ? "ध्यान दें: आपके पास जीवन भर में केवल 2 संपादन हैं। सोच-समझकर चुनें।"
+                          : "Note: You only get 2 edits in your lifetime. Choose carefully."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Quick Links */}
               <div className="flex flex-wrap gap-3">

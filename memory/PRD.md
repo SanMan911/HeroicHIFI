@@ -90,6 +90,9 @@ backend/
 27. **Webhook Health widget** — pass-rate chip, event log, replay button per row
 28. **Two-admin gate on Annual 80G dispatch** — separation-of-duties: drafter cannot self-approve (unless Master Admin). Admin A drafts → Admin B approves & dispatches. Daemon also creates a draft (never auto-sends).
 29. **Master Admin tier** — `admin@heroichifi.org` is HIDDEN from other admins (roster, activity logs, stats, all per-user endpoints return 404) and has master override on: Annual 80G self-approve, one-step admin promotion (skips multi-admin gate). Master override actions log `override=true` for audit trail. Master Admin badge shown only to super-admin in the dashboard header.
+30. **Office-Bearer Posts** — Chairman, Secretary, Treasurer (all unique), Event Incharge & Assistant (multi-holder). Editable inline from each Roster card by Master Admin. Tenure history (start/end/reason) is preserved in `office_history` and exported in the AGM Report PDF.
+31. **Specialization Lifetime Limit** — New volunteer registrants must select **at least 3** specializations to enable the *Verify & Register* button. After registration, each volunteer can edit their specializations a maximum of **2 times in their lifetime** via Profile → My Specializations. Counter (`specialization_edits_remaining`, default 2) is decremented atomically; volunteers see "X edits remaining" and are blocked at 0.
+32. **Webhook Health Reset** — Master Admin only "↻ Reset history" button on the Razorpay Webhook Health widget purges historical webhook events (useful after rotating the secret or migrating from preview→production). Smarter dual-banner: hard error when zero verified, soft amber notice when historical noise skews the pass-rate.
 
 ## Backlog
 ### P0 — see PINNED block at top

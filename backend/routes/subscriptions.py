@@ -264,6 +264,18 @@ async def admin_webhook_health(limit: int = 25, admin: dict = Depends(require_ad
     }
 
 
+@router.post("/admin/webhook-events/purge")
+async def admin_purge_webhook_events(admin: dict = Depends(require_admin)):
+    """Master Admin only — clear historical webhook events to reset the health
+    widget. Use this after rotating the webhook secret or after migrating from a
+    test environment so old test/ping events no longer skew the pass rate."""
+    if not is_super_admin(admin):
+        raise HTTPException(status_code=403, detail="Master Admin only.")
+    res = await db.webhook_events.delete_many({"source": "razorpay"})
+    await log_activity("webhook_events_purged", "admin", "", admin["email"], f"Cleared {res.deleted_count} webhook event(s)", "")
+    return {"message": f"Cleared {res.deleted_count} webhook event(s). Health widget reset.", "deleted": res.deleted_count}
+
+
 @router.post("/admin/webhook-events/{event_id}/replay")
 async def admin_replay_webhook_event(event_id: str, admin: dict = Depends(require_admin)):
     """Re-run the webhook handler logic on a stored event (without re-verifying signature).

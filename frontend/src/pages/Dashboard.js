@@ -314,6 +314,11 @@ export default function Dashboard() {
   const handleRecomputePatrons = async () => { try { const { data } = await api.post("/admin/patrons/recompute"); toast.success(data.message); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleSimulateCharge = async (subId) => { try { const { data } = await api.post(`/admin/subscriptions/${subId}/simulate-charge`); toast.success(`Charge simulated. ${data.patron?.promoted ? "🎉 Promoted to Heroic Patron!" : `Charges: ${data.patron?.charge_count || 0}/6`}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleReplayWebhook = async (eventId) => { try { const { data } = await api.post(`/admin/webhook-events/${eventId}/replay`); toast.success(`Replayed: ${data.side_effects?.join(", ") || "no side effects"}`); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handlePurgeWebhookEvents = async () => {
+    if (!window.confirm("Clear ALL stored Razorpay webhook events? This resets the health widget — useful after rotating the webhook secret. New events will continue to flow in normally.")) return;
+    try { const { data } = await api.post("/admin/webhook-events/purge"); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
   const handleAnnual80g = async (action) => {
     // action: 'preview' | 'draft'
     const fy = window.prompt("FY start date (e.g. 2025-04-01). Leave blank for the previous FY:", "");
@@ -852,14 +857,21 @@ export default function Dashboard() {
               {/* Webhook Health Widget */}
               {webhookHealth && (
                 <div className="bg-white rounded-2xl border border-sky-100 shadow-sm p-5 mb-6" data-testid="webhook-health-widget">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                     <h3 className="text-base font-semibold text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                       <Activity className={`w-4 h-4 ${webhookHealth.pass_rate >= 90 ? "text-green-600" : webhookHealth.pass_rate >= 50 ? "text-amber-500" : "text-red-500"}`} />
                       Razorpay Webhook Health
                     </h3>
-                    <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full border ${webhookHealth.pass_rate >= 90 ? "bg-green-50 text-green-700 border-green-200" : webhookHealth.pass_rate >= 50 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200"}`} data-testid="webhook-pass-rate">
-                      {webhookHealth.pass_rate}% verified
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full border ${webhookHealth.pass_rate >= 90 ? "bg-green-50 text-green-700 border-green-200" : webhookHealth.pass_rate >= 50 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200"}`} data-testid="webhook-pass-rate">
+                        {webhookHealth.pass_rate}% verified
+                      </span>
+                      {user.is_super_admin && webhookHealth.total > 0 && (
+                        <button onClick={handlePurgeWebhookEvents} className="text-[10px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600 border border-slate-200 hover:border-red-200 font-medium" title="Master Admin only — clears stored events to reset stats" data-testid="purge-webhook-btn">
+                          ↻ Reset history
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                     <div className="bg-sky-50/50 rounded-xl p-3"><p className="text-[10px] text-slate-500 uppercase tracking-wider">Total Events</p><p className="text-xl font-semibold text-[#0D2847]">{webhookHealth.total}</p></div>
@@ -870,6 +882,11 @@ export default function Dashboard() {
                   {webhookHealth.unverified > 0 && webhookHealth.verified === 0 && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-3 text-xs text-red-700">
                       <strong>⚠️ No verified events yet.</strong> Check that <code className="bg-red-100 px-1 rounded">RAZORPAY_WEBHOOK_SECRET</code> in <code className="bg-red-100 px-1 rounded">.env</code> matches the secret you set in the Razorpay dashboard.
+                    </div>
+                  )}
+                  {webhookHealth.unverified > 0 && webhookHealth.verified > 0 && webhookHealth.last_verified && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-xs text-amber-800">
+                      <strong>ℹ Pass-rate skewed by historical events.</strong> Most likely from old test pings or a previous webhook secret. Last <strong>verified</strong> event was on <strong>{new Date(webhookHealth.last_verified.received_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</strong>{user.is_super_admin && <> — click <em>↻ Reset history</em> above to clear the noise.</>}
                     </div>
                   )}
                   {webhookHealth.recent.length === 0 ? (

@@ -60,6 +60,8 @@ async def register(data: RegisterInput, request: Request):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     chosen_role = data.role if data.role in ("volunteer", "member") else "member"
+    if chosen_role == "volunteer" and len(set(data.specializations)) < 3:
+        raise HTTPException(status_code=400, detail="Volunteers must pick at least 3 specializations.")
     doc = {
         "name": data.name, "email": email,
         "password_hash": hash_password(data.password),
@@ -68,7 +70,8 @@ async def register(data: RegisterInput, request: Request):
         "aadhaar_number": data.aadhaar_number,
         "role": chosen_role, "email_verified": True,
         "volunteer_hours": 0, "badges": ["Helping Hero"] if chosen_role == "volunteer" else [],
-        "specializations": data.specializations if chosen_role == "volunteer" else [],
+        "specializations": list(set(data.specializations)) if chosen_role == "volunteer" else [],
+        "specialization_edits_remaining": 2 if chosen_role == "volunteer" else 0,
         "profile_pic_path": "", "status": "active",
         "merchandise_issued": False, "admin_comments": "",
         "suspended_until": None, "suspension_reason": "",

@@ -125,6 +125,10 @@ class ProfileUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
 
+
+class SpecializationUpdate(BaseModel):
+    specializations: List[str]
+
 class RoleChangeRequest(BaseModel):
     requested_role: str
     reason: str = ""

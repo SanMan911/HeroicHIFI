@@ -76,6 +76,12 @@ export default function Login() {
     if (!form.name || !form.email || !form.password || !form.phone || !form.pan_number || !form.aadhaar_number) {
       setError(t.fill_mandatory); return;
     }
+    if (form.role === "volunteer" && new Set(form.specializations).size < 3) {
+      const msg = lang === "hi"
+        ? "स्वयंसेवकों को कम से कम 3 रुचि क्षेत्र चुनने होंगे।"
+        : "Volunteers must select at least 3 areas of interest.";
+      setError(msg); toast.error(msg); return;
+    }
     setLoading(true); setError("");
     try {
       const { data } = await api.post("/auth/send-otp", { email: form.email, purpose: "registration" });
@@ -227,8 +233,14 @@ export default function Login() {
                 {form.role === "volunteer" && (
                   <div data-testid="register-specializations">
                     <Label className="text-sm font-medium text-slate-700">
-                      {lang === "hi" ? "आपकी रुचि के क्षेत्र (एक या अधिक चुनें)" : "Your areas of interest (pick one or more)"}
+                      {lang === "hi" ? "आपकी रुचि के क्षेत्र (कम से कम 3 चुनें)" : "Your areas of interest (pick at least 3)"} *
                     </Label>
+                    <p className={`text-[11px] mt-1 ${form.specializations.length >= 3 ? "text-green-600" : "text-amber-600"}`} data-testid="spec-count">
+                      {lang === "hi"
+                        ? `${form.specializations.length}/3 चयनित`
+                        : `${form.specializations.length} of 3 minimum selected`}
+                      {form.specializations.length >= 3 && (lang === "hi" ? " ✓" : " ✓")}
+                    </p>
                     <div className="flex flex-wrap gap-2 mt-2">
                       {SPECIALIZATIONS.map((s) => {
                         const active = form.specializations.includes(s.key);
@@ -251,7 +263,7 @@ export default function Login() {
                   <ShieldCheck className="w-4 h-4 text-[#1E56A0] mt-0.5 shrink-0" />
                   <p className="text-xs text-slate-600">{t.pan_aadhaar_note}</p>
                 </div>
-                <Button type="submit" disabled={loading} className="w-full bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full py-3 text-base font-medium" data-testid="register-send-otp-btn">
+                <Button type="submit" disabled={loading || (form.role === "volunteer" && form.specializations.length < 3)} className="w-full bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-full py-3 text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed" data-testid="register-send-otp-btn">
                   {loading ? t.sending_otp : t.verify_register} <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </form>

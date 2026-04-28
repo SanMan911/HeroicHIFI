@@ -6,7 +6,7 @@ from utils.auth import get_current_user
 from utils.storage import put_object, get_object, APP_NAME
 from utils.badges import compute_auto_badges
 from utils.activity import log_activity
-from models.schemas import ProfileUpdate
+from models.schemas import ProfileUpdate, SpecializationUpdate
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,31 @@ async def get_profile(user: dict = Depends(get_current_user)):
         "status": user.get("status", "active"),
         "pan_verified": user.get("pan_verified", False),
         "aadhaar_verified": user.get("aadhaar_verified", False),
+        "specializations": user.get("specializations", []),
+        "specialization_edits_remaining": user.get("specialization_edits_remaining", 2 if user.get("role") == "volunteer" else 0),
         "created_at": user.get("created_at", ""),
     }
+
+
+VALID_SPECIALIZATIONS = {"education", "healthcare", "environment", "food", "women", "animal", "clothing"}
+
+
+@router.put("/profile/specializations")
+async def update_specializations(data: SpecializationUpdate, user: dict = Depends(get_current_user)):
+    if user.get("role") != "volunteer":
+        raise HTTPException(status_code=403, detail="Only volunteers can manage specializations.")
+    cleaned = list({s for s in data.specializations if s in VALID_SPECIALIZATIONS})
+    if len(cleaned) < 3:
+        raise HTTPException(status_code=400, detail="Pick at least 3 specializations.")
+    remaining = user.get("specialization_edits_remaining", 2)
+    if remaining <= 0:
+        raise HTTPException(status_code=403, detail="You have used both lifetime specialization edits. Contact admin if you need a further change.")
+    if set(cleaned) == set(user.get("specializations", [])):
+        raise HTTPException(status_code=400, detail="No change in specializations — pick a different combination or cancel.")
+    new_remaining = remaining - 1
+    await db.users.update_one({"email": user["email"]}, {"$set": {"specializations": cleaned, "specialization_edits_remaining": new_remaining}})
+    await log_activity("specializations_updated", "user", str(user.get("_id", "")), user["email"], f"Specializations -> {cleaned} (edits left: {new_remaining})", "")
+    return {"message": "Specializations updated.", "specializations": cleaned, "specialization_edits_remaining": new_remaining}
 
 
 @router.put("/profile")

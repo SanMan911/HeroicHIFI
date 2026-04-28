@@ -6,6 +6,7 @@ export const OFFICE_POSTS = [
   "Chairman",
   "Secretary",
   "Treasurer",
+  "Event Incharge",
   "Assistant",
 ];
 

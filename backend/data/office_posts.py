@@ -10,6 +10,7 @@ OFFICE_POSTS: list[str] = [
     "Chairman",
     "Secretary",
     "Treasurer",
+    "Event Incharge",
     "Assistant",
 ]
 
