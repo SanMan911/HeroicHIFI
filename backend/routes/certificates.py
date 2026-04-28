@@ -74,23 +74,34 @@ def _draw_letterhead(c, w, h, title: str, subtitle: str = ""):
 
 def generate_provisional_receipt_pdf(donation: dict) -> bytes:
     """Per-donation acknowledgment. Explicitly NOT a tax-deduction document.
-    Donors get this on every donation; the consolidated 80G certificate
-    is issued separately on 1 April for the prior FY."""
+    Donors get this on every confirmed donation; the consolidated 80G
+    certificate is issued separately on 1 April for the prior FY."""
     buf = io.BytesIO()
     c = pdf_canvas.Canvas(buf, pagesize=A4)
     w, h = A4
 
-    y = _draw_letterhead(c, w, h, "DONATION ACKNOWLEDGMENT", "(Provisional Receipt — Not a Tax Certificate)")
+    y = _draw_letterhead(c, w, h, "DONATION ACKNOWLEDGMENT", "(Provisional — NOT a tax certificate)")
+
+    # TOP-OF-PAGE WARNING BAND — impossible to miss
+    band_top = y - 10*mm
+    band_h = 14*mm
+    c.setFillColor(RED)
+    c.rect(35*mm, band_top - band_h, w - 70*mm, band_h, fill=1, stroke=0)
+    c.setFillColor(HexColor("#FFFFFF"))
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString(w/2, band_top - 6*mm, "THIS DOCUMENT CANNOT BE TREATED AS A TAX PAPER")
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(w/2, band_top - 10.5*mm, "Not valid for claiming a deduction under Section 80G of the Income Tax Act, 1961.")
+    y = band_top - band_h - 10*mm
 
     receipt_no = f"HHF-ACK/{datetime.now(IST).strftime('%Y%m')}/{donation['id'][:8].upper()}"
-    y -= 12*mm
     c.setFont("Helvetica-Bold", 9)
     c.setFillColor(DARK)
     c.drawString(35*mm, y, f"Receipt No: {receipt_no}")
     donation_dt = donation.get("created_at", "")[:10] or datetime.now(IST).strftime("%Y-%m-%d")
     c.drawRightString(w - 35*mm, y, f"Date: {donation_dt}")
 
-    y -= 13*mm
+    y -= 12*mm
     fields = [
         ("Donor Name", donation.get("name", "")),
         ("PAN Number", donation.get("pan_number", "")),
@@ -99,7 +110,7 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
         ("Amount Received", f"\u20B9 {donation.get('amount', 0):,}"),
         ("Donation Type", donation.get("message", "") or "One-time donation"),
         ("Payment Reference", donation.get("razorpay_payment_id", "") or "—"),
-        ("Status", str(donation.get("status", "pending")).capitalize()),
+        ("Confirmation Status", str(donation.get("status", "pending")).upper()),
     ]
     for label, value in fields:
         c.setFont("Helvetica-Bold", 9)
@@ -121,35 +132,40 @@ def generate_provisional_receipt_pdf(donation: dict) -> bytes:
     fy_start, fy_end, fy_label = fy_for_date(d)
     consolidated_date = date(fy_end.year, 4, 1)  # 1 April of the next FY
 
-    # IMPORTANT NOTICE box — bold, red border, no 80G language
+    # Detailed legal notice box
     y -= 6*mm
     c.setStrokeColor(RED)
-    c.setLineWidth(1.2)
+    c.setLineWidth(1.5)
     box_top = y
-    box_h = 38*mm
+    box_h = 46*mm
     c.rect(35*mm, y - box_h, w - 70*mm, box_h)
+    # Fill with pale red
+    c.setFillColor(HexColor("#FEF2F2"))
+    c.rect(35.5*mm, y - box_h + 0.5*mm, w - 71*mm, box_h - 1*mm, fill=1, stroke=0)
+    c.setFillColor(DARK)
     y -= 6*mm
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(RED)
-    c.drawCentredString(w/2, y, "IMPORTANT — THIS IS NOT AN 80G TAX CERTIFICATE")
-    y -= 6*mm
+    c.drawCentredString(w/2, y, "LEGAL DISCLAIMER — PLEASE READ")
+    y -= 7*mm
 
     style = ParagraphStyle(
         "notice", fontName="Helvetica", fontSize=8.5, leading=12,
         textColor=DARK, alignment=TA_LEFT,
     )
     notice_text = (
-        "This document is a <b>provisional acknowledgment</b> of your contribution and "
-        "<b>cannot be used to claim a tax deduction</b> under Section 80G of the Income Tax Act, 1961. "
-        f"A <b>consolidated 80G tax certificate</b> covering all your donations made during "
-        f"<b>FY {fy_label} (1 April {fy_start.year} to 31 March {fy_end.year})</b> "
-        f"will be auto-emailed to you on or shortly after <b>{consolidated_date.strftime('%d %B %Y')}</b>. "
-        "Please retain that document — and not this receipt — for filing your income tax return."
+        "This acknowledgment is a <b>provisional confirmation of receipt</b> only. "
+        "It <b>CANNOT be treated as a tax paper</b> and <b>cannot be used to claim a tax deduction</b> "
+        "under Section 80G of the Income Tax Act, 1961, or any other provision of Indian tax law. "
+        "A <b>consolidated 80G tax certificate</b> aggregating every confirmed donation made by you during "
+        f"<b>Financial Year {fy_label}</b> (1 April {fy_start.year} to 31 March {fy_end.year}) "
+        f"will be <b>auto-emailed to you on {consolidated_date.strftime('%d %B %Y')}</b> — the first day "
+        "of the subsequent Financial Year. Please retain only that document for your income tax filing."
     )
     p = Paragraph(notice_text, style)
     pw, ph = p.wrap(w - 80*mm, 100*mm)
     p.drawOn(c, 40*mm, y - ph)
-    y = box_top - box_h - 8*mm
+    y = box_top - box_h - 10*mm
 
     # Thank-you signature block
     c.setFont("Helvetica-Bold", 9)

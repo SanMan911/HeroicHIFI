@@ -56,9 +56,24 @@ async def verify_payment(body: dict, request: Request, user: dict = Depends(get_
         })
     except Exception:
         raise HTTPException(status_code=400, detail="Payment verification failed")
-    await db.donations.update_one({"razorpay_order_id": body["razorpay_order_id"]}, {"$set": {"status": "confirmed", "razorpay_payment_id": body["razorpay_payment_id"]}})
-    await log_activity("payment_verified", "donation", body["razorpay_order_id"], "", "Payment confirmed", request.client.host if request.client else "")
-    return {"message": "Payment verified successfully"}
+    await db.donations.update_one(
+        {"razorpay_order_id": body["razorpay_order_id"]},
+        {"$set": {"status": "confirmed", "razorpay_payment_id": body["razorpay_payment_id"]}},
+    )
+    # Email the provisional receipt only AFTER Razorpay has confirmed the payment
+    donation = await db.donations.find_one({"razorpay_order_id": body["razorpay_order_id"]}, {"_id": 0})
+    receipt_sent = False
+    if donation and donation.get("pan_number"):
+        try:
+            from utils.email import send_donation_receipt_email
+            pdf = generate_provisional_receipt_pdf(donation)
+            receipt_sent = await send_donation_receipt_email(donation, pdf, label="donation")
+        except Exception:
+            pass
+    await log_activity("payment_verified", "donation", body["razorpay_order_id"], (donation or {}).get("email", ""),
+                       f"amount=₹{(donation or {}).get('amount', 0)} receipt_sent={receipt_sent}",
+                       request.client.host if request.client else "")
+    return {"message": "Payment verified successfully", "receipt_sent": receipt_sent}
 
 
 @router.post("/donations")
@@ -82,15 +97,22 @@ async def list_donations(user: dict = Depends(get_current_user)):
 
 
 @router.get("/donations/{donation_id}/certificate")
-async def download_80g_certificate(donation_id: str):
+async def download_provisional_receipt(donation_id: str):
     donation = await db.donations.find_one({"id": donation_id}, {"_id": 0})
     if not donation:
         raise HTTPException(status_code=404, detail="Donation not found")
+    # Gate: provisional receipt is ONLY downloadable after Razorpay confirms the payment.
+    status = donation.get("status", "pending")
+    if status != "confirmed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Receipt unavailable: payment status is '{status}'. Receipts are issued only after Razorpay confirms the transaction.",
+        )
     if not donation.get("pan_number"):
-        raise HTTPException(status_code=400, detail="PAN number is required for 80G certificate")
+        raise HTTPException(status_code=400, detail="PAN number is required on the donation record")
     pdf_bytes = generate_provisional_receipt_pdf(donation)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=HHF_80G_{donation_id[:8]}.pdf"}
+        headers={"Content-Disposition": f"attachment; filename=HHF_Acknowledgment_{donation_id[:8]}.pdf"},
     )
