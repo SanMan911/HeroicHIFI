@@ -129,6 +129,18 @@ async def list_drives():
     return await db.drives.find({}, {"_id": 0}).sort("date", -1).to_list(200)
 
 
+# ── Public hero recognition card ──
+@router.get("/heroes/{slug_or_email}")
+async def get_hero_card(slug_or_email: str):
+    """Public per-hero recognition card — always synced from underlying truth.
+    No auth. Master Admin is intentionally not resolvable here."""
+    from utils.heroes import assemble_hero_card
+    card = await assemble_hero_card(slug_or_email)
+    if not card:
+        raise HTTPException(status_code=404, detail="Hero not found.")
+    return card
+
+
 # ── Wall of Fame (public) ──
 @router.get("/wall-of-fame")
 async def get_wall_of_fame():

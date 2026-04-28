@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import api from "../lib/api";
 import { motion } from "framer-motion";
-import { Award, Clock, IndianRupee, Star, Trophy, Crown, Repeat, Heart, Compass, Sparkles, Calendar, ShieldCheck } from "lucide-react";
+import { Award, Clock, IndianRupee, Star, Trophy, Crown, Repeat, Heart, Compass, Sparkles, Calendar, ShieldCheck, ExternalLink } from "lucide-react";
 
 const BADGE_COLORS = {
   "Helping Hero": "bg-green-900/40 text-green-300 border-green-700/50",
@@ -25,6 +26,8 @@ const formatDate = (iso) => {
     return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   } catch { return "—"; }
 };
+
+const slugify = (name) => (name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "hero";
 
 const tenureLabel = (start, end) => {
   if (!start) return "";
@@ -101,6 +104,9 @@ function LedgerCard({ entry, kind, index }) {
           {entry.ended_reason && (
             <p className="text-[10px] text-slate-500 mt-1 italic">{entry.ended_reason}</p>
           )}
+          <Link to={`/heroes/${slugify(entry.donor_name)}`} className="inline-flex items-center gap-1 mt-3 text-[10px] text-amber-300/80 hover:text-amber-200" data-testid={`${kind}-view-card-${entry.id}`}>
+            <ExternalLink className="w-3 h-3" /> View recognition card
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -137,6 +143,9 @@ function OfficeCard({ entry, index }) {
           {entry.end_reason && !isActive && (
             <p className="text-[10px] text-slate-500 mt-1.5 italic">{entry.end_reason}</p>
           )}
+          <Link to={`/heroes/${slugify(entry.user_name || entry.user_email)}`} className="inline-flex items-center gap-1 mt-2 text-[10px] text-amber-300/80 hover:text-amber-200" data-testid={`office-view-card-${entry.id || index}`}>
+            <ExternalLink className="w-3 h-3" /> View recognition card
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -192,6 +201,9 @@ function PatronCard({ patron, index }) {
           {patron.contribution_summary && (
             <p className="text-xs text-fuchsia-100/70 leading-relaxed italic">&ldquo;{patron.contribution_summary}&rdquo;</p>
           )}
+          <Link to={`/heroes/${slugify(patron.name)}`} className="inline-flex items-center gap-1 mt-3 text-[10px] text-fuchsia-300/80 hover:text-fuchsia-200" data-testid={`patron-view-card-${patron.email}`}>
+            <ExternalLink className="w-3 h-3" /> View recognition card
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -225,6 +237,9 @@ function BadgeHolderCard({ holder, badge, index }) {
           {holder.volunteer_hours > 0 && (
             <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{holder.volunteer_hours} hrs</p>
           )}
+          <Link to={`/heroes/${slugify(holder.name)}`} className="inline-flex items-center gap-1 mt-2 text-[10px] text-cyan-300/80 hover:text-cyan-200" data-testid={`badge-view-card-${holder.email}`}>
+            <ExternalLink className="w-3 h-3" /> View card
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -274,6 +289,9 @@ function CuratedCard({ entry, index }) {
           {entry.contribution_summary && (
             <p className="text-xs text-slate-300/80 leading-relaxed italic">&ldquo;{entry.contribution_summary}&rdquo;</p>
           )}
+          <Link to={`/heroes/${slugify(entry.name)}`} className="inline-flex items-center gap-1 mt-3 text-[10px] text-amber-300/80 hover:text-amber-200" data-testid={`curated-view-card-${entry.email}`}>
+            <ExternalLink className="w-3 h-3" /> View recognition card
+          </Link>
         </div>
       </div>
     </motion.div>

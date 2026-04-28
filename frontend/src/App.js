@@ -17,6 +17,7 @@ import Profile from "./pages/Profile";
 import ResetPassword from "./pages/ResetPassword";
 import Tickets from "./pages/Tickets";
 import WallOfFame from "./pages/WallOfFame";
+import Hero from "./pages/Hero";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
                   <Route path="/tickets" element={<Tickets />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/wall-of-fame" element={<WallOfFame />} />
+                  <Route path="/heroes/:slug" element={<Hero />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                 </Routes>
               </Layout>
