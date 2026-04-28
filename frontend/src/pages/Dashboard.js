@@ -207,6 +207,24 @@ export default function Dashboard() {
       toast.success(data.message); fetchData();
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   };
+  const handleProposeAdminFromCard = async (email, name) => {
+    const reason = window.prompt(`Propose promoting ${name || email} to Admin.\n\nReason for the proposal (visible to other admins for the vote):`);
+    if (reason === null) return;
+    if (reason.trim().length < 5) { toast.error("Please provide a reason (at least 5 characters)."); return; }
+    try {
+      const { data } = await api.post("/admin/promote-request", { target_email: email, reason: reason.trim() });
+      toast.success(data.message); fetchData();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleProposeRemoveAdminFromCard = async (email, name) => {
+    const reason = window.prompt(`Propose removing ${name || email} from Admin.\n\nReason for the removal (required for AGM minutes):`);
+    if (reason === null) return;
+    if (reason.trim().length < 5) { toast.error("A reason of at least 5 characters is required."); return; }
+    try {
+      const { data } = await api.post("/admin/remove-admin-request", { target_email: email, reason: reason.trim() });
+      toast.success(data.message); fetchData();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
   const handleRemovalAction = async (id, action) => {
     try { const { data } = await api.put(`/admin/remove-admin-requests/${id}/${action}`); toast.success(data.message); fetchData(); }
     catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
@@ -774,7 +792,7 @@ export default function Dashboard() {
                   );
                 })}
               </div>
-              <div className="space-y-3">{filteredUsers.length === 0 ? <p className="text-center text-slate-400 py-12">No users matching filters.</p> : filteredUsers.map(u => (<UserCard key={u.email} u={u} onDelete={handleDeleteUser} onUpdate={handleAdminUpdateUser} onAddBadge={handleAddBadge} onRemoveBadge={handleRemoveBadge} onVerifyPan={handleVerifyPan} isOnWall={wallOfFame.some(w => w.email === u.email)} onToggleWall={handleToggleWallOfFame} canManageOfficePost={!!user.is_super_admin} />))}</div>
+              <div className="space-y-3">{filteredUsers.length === 0 ? <p className="text-center text-slate-400 py-12">No users matching filters.</p> : filteredUsers.map(u => (<UserCard key={u.email} u={u} onDelete={handleDeleteUser} onUpdate={handleAdminUpdateUser} onAddBadge={handleAddBadge} onRemoveBadge={handleRemoveBadge} onVerifyPan={handleVerifyPan} isOnWall={wallOfFame.some(w => w.email === u.email)} onToggleWall={handleToggleWallOfFame} canManageOfficePost={!!user.is_super_admin} onProposeAdmin={handleProposeAdminFromCard} onProposeRemoveAdmin={handleProposeRemoveAdminFromCard} isSuperAdminViewer={!!user.is_super_admin} regularAdminCount={admins.filter(a => !a.is_super_admin).length} />))}</div>
             </div>
           )}
 
@@ -898,7 +916,9 @@ function TicketsPanel({ tickets, onStatusChange, onRespond }) {
   return (<div className="space-y-3" data-testid="admin-tickets-list">{tickets.map(tk => (<div key={tk.id} className="bg-white rounded-xl border border-sky-100 shadow-sm p-4" data-testid={`admin-ticket-${tk.id}`}><div className="flex items-start justify-between mb-2"><div><p className="text-sm font-medium">{tk.subject}</p><p className="text-xs text-slate-400">{tk.user_name} | {new Date(tk.created_at).toLocaleDateString("en-IN")}</p></div><div className="flex items-center gap-2"><span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${tk.priority === "high" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>{tk.priority}</span><Select value={tk.status} onValueChange={val => onStatusChange(tk.id, val)}><SelectTrigger className="h-6 text-[10px] w-28 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in-progress">In Progress</SelectItem><SelectItem value="responded">Responded</SelectItem><SelectItem value="resolved">Resolved</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div></div><p className="text-xs text-slate-600 mb-2">{tk.description}</p>{tk.admin_response && <div className="bg-sky-50 border border-sky-200 rounded-lg p-2 mb-2"><p className="text-[10px] font-medium text-[#1E56A0]">Response:</p><p className="text-xs">{tk.admin_response}</p></div>}<button onClick={() => onRespond(tk.id, window.prompt("Response:"))} className="text-xs text-[#1E56A0] hover:underline">{tk.admin_response ? "Update" : "Respond"}</button></div>))}</div>);
 }
 
-function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPan, isOnWall, onToggleWall, canManageOfficePost }) {
+function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPan, isOnWall, onToggleWall, canManageOfficePost, onProposeAdmin, onProposeRemoveAdmin, isSuperAdminViewer, regularAdminCount }) {
+  const canProposeAdmin = ["member", "volunteer"].includes(u.role) && u.status !== "suspended";
+  const canProposeRemoveAdmin = u.role === "admin" && !u.is_super_admin;
   const [expanded, setExpanded] = useState(false);
   const [hours, setHours] = useState(u.volunteer_hours || 0);
   const [comments, setComments] = useState(u.admin_comments || "");
@@ -941,6 +961,24 @@ function UserCard({ u, onDelete, onUpdate, onAddBadge, onRemoveBadge, onVerifyPa
           {u.role === "volunteer" && (<><div><p className="text-xs font-medium text-slate-500 mb-1 flex items-center gap-1"><Award className="w-3 h-3" /> Badges</p><div className="flex flex-wrap gap-1 mb-2">{(u.badges || []).map(b => (<span key={b} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-sky-50 text-[#1E56A0] border border-sky-100">{b}<button onClick={() => onRemoveBadge(u.email, b)} className="text-red-400 hover:text-red-600">&times;</button></span>))}</div><div className="flex gap-1"><select value={newBadge} onChange={e => setNewBadge(e.target.value)} className="text-xs border rounded-lg px-2 py-1"><option value="">Add badge...</option>{BADGES.filter(b => !(u.badges || []).includes(b)).map(b => <option key={b} value={b}>{b}</option>)}</select>{newBadge && <button onClick={() => { onAddBadge(u.email, newBadge); setNewBadge(""); }} className="text-xs text-[#1E56A0]">Add</button>}</div></div>
           <div className="flex flex-wrap items-end gap-4"><div><label className="text-xs text-slate-400 block mb-1">Hours</label><div className="flex gap-1"><input type="number" value={hours} onChange={e => setHours(parseInt(e.target.value) || 0)} className="w-20 text-xs border rounded-lg px-2 py-1" /><button onClick={() => onUpdate(u.email, { volunteer_hours: hours })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg">Save</button></div></div><label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={u.merchandise_issued || false} onChange={e => onUpdate(u.email, { merchandise_issued: e.target.checked })} className="rounded" /><Package className="w-3 h-3" /> Merch</label></div></>)}
           <div><label className="text-xs text-slate-400 block mb-1">Comments</label><div className="flex gap-1"><textarea value={comments} onChange={e => setComments(e.target.value)} rows={2} className="flex-1 text-xs border rounded-lg px-2 py-1 resize-none" /><button onClick={() => onUpdate(u.email, { admin_comments: comments })} className="text-xs px-2 py-1 bg-[#1E56A0] text-white rounded-lg self-end">Save</button></div></div>
+          {(canProposeAdmin || canProposeRemoveAdmin) && (
+            <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3 flex items-center justify-between gap-2 flex-wrap" data-testid={`admin-role-actions-${u.email}`}>
+              <div>
+                <p className="text-xs font-medium text-[#0D2847] flex items-center gap-1.5"><Shield className="w-3 h-3 text-[#1E56A0]" /> Admin Role</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{canProposeAdmin ? (isSuperAdminViewer ? "As Master Admin, your proposal instantly promotes this user." : `Unanimous vote from all ${regularAdminCount} regular admin(s) required.`) : (isSuperAdminViewer ? "Master Admin can unseat unilaterally." : "Unanimous vote from every other regular admin required. Target doesn't vote.")}</p>
+              </div>
+              {canProposeAdmin && (
+                <button onClick={() => onProposeAdmin(u.email, u.name)} className="text-xs px-3 py-1.5 rounded-lg bg-[#1E56A0] text-white hover:bg-[#174A8A] font-medium inline-flex items-center gap-1" data-testid={`propose-admin-${u.email}`}>
+                  <ArrowUpDown className="w-3 h-3" /> Propose as Admin
+                </button>
+              )}
+              {canProposeRemoveAdmin && (
+                <button onClick={() => onProposeRemoveAdmin(u.email, u.name)} className="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium inline-flex items-center gap-1" data-testid={`propose-remove-admin-${u.email}`}>
+                  <XCircle className="w-3 h-3" /> Unseat Admin
+                </button>
+              )}
+            </div>
+          )}
           {canManageOfficePost && (
             <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-2" data-testid={`office-editor-${u.email}`}>
               <p className="text-xs font-medium text-amber-900 flex items-center gap-1.5"><Compass className="w-3 h-3" /> Office-Bearer Post <span className="text-[10px] text-amber-700/70 font-normal">(Master Admin only · Chairman / Secretary / Treasurer are limited to one person each)</span></p>
