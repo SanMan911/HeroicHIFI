@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 from config import db
 from models.schemas import OTPRequest, OTPVerify, RegisterInput, LoginInput, PasswordResetRequest, PasswordResetConfirm
-from utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from utils.auth import hash_password, verify_password, create_access_token, get_current_user, is_super_admin
 from utils.email import send_otp_email, send_reset_email, send_registration_notification
 from utils.activity import log_activity
 
@@ -112,12 +112,13 @@ async def login(data: LoginInput, request: Request):
         "address": user.get("address", ""), "age": user.get("age"), "dob": user.get("dob", ""),
         "volunteer_hours": user.get("volunteer_hours", 0), "badges": user.get("badges", ["Helping Hero"]),
         "profile_pic_path": user.get("profile_pic_path", ""), "status": user.get("status", "active"),
+        "is_super_admin": is_super_admin(email),
     }}
 
 
 @router.get("/auth/me")
 async def get_me(user: dict = Depends(get_current_user)):
-    return {"user": user}
+    return {"user": {**user, "is_super_admin": is_super_admin(user)}}
 
 
 @router.post("/auth/logout")

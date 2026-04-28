@@ -1,0 +1,58 @@
+{
+  "summary": "Master-Admin (super-admin) tier verified end-to-end. Backend: 21/21 pytest pass — /auth/login and /auth/me surface user.is_super_admin (true for admin@heroichifi.org, false for admin2); /api/admin/users hides super-admin from regular admin (admin2 count 12, super count 13); per-user endpoints update/delete/verify-pan/badge all return 404 for regular admin targeting super-admin; activity-logs scrubbed of user_email/entity_id==super for regular admin; /api/admin/stats accessible to both and counts differ; /api/admin/promote-request yields required_approvals=1 for super-admin caller (master override), regular admin gets >=1; annual 80G separation-of-duties gate: super-admin CAN self-reject own pending draft (tested via reject to avoid real mass-email dispatch; approve path shares identical gate logic at code level), regular admin self-reject blocked 403; regression heroic-patrons/admin-subscriptions (LIVE Razorpay)/webhook-health all pass. Frontend: super-admin sees [data-testid=master-admin-badge] 'MASTER ADMIN' crown pill next to Admin Dashboard heading and own email in Roster; regular admin does NOT see the badge and does NOT see admin@heroichifi.org in the Roster (Admin filter shows 1 vs 2).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "passed_tests": [
+    "POST /api/auth/login admin@ -> user.is_super_admin=true",
+    "POST /api/auth/login admin2@ -> user.is_super_admin=false",
+    "GET /api/auth/me admin@ -> is_super_admin=true",
+    "GET /api/auth/me admin2@ -> is_super_admin=false",
+    "GET /api/admin/users as super -> includes admin@ and admin2@",
+    "GET /api/admin/users as admin2 -> EXCLUDES admin@ (filter query {email: {$ne: super_admin_email()}})",
+    "PUT /api/admin/users/admin@heroichifi.org/update as admin2 -> 404 'User not found'",
+    "DELETE /api/admin/users/admin@heroichifi.org as admin2 (with reason) -> 404",
+    "POST /api/admin/users/admin@heroichifi.org/verify-pan as admin2 -> 404",
+    "POST /api/admin/users/admin@heroichifi.org/badge as admin2 -> 404",
+    "PUT /api/admin/users/admin@heroichifi.org/update as super (self) -> 200/400 (no gate)",
+    "GET /api/admin/activity-logs as admin2 -> zero entries where user_email==super or entity_id==super",
+    "GET /api/admin/activity-logs as super -> >= count returned to admin2",
+    "GET /api/admin/stats as both admins -> 200, dict returned, user-count fields never higher for admin2",
+    "POST /api/admin/promote-request as super -> required_approvals==1 (master override)",
+    "POST /api/admin/promote-request as admin2 -> required_approvals>=1 (normal gate)",
+    "POST /api/admin/annual-80g/drafts/{id}/reject self as admin2 -> 403 'Reject must come from a different admin.'",
+    "POST /api/admin/annual-80g/drafts/{id}/reject self as super -> 200 (master override)",
+    "GET /api/heroic-patrons -> 200 list (regression)",
+    "GET /api/admin/subscriptions as super -> 200 LIVE list (regression)",
+    "GET /api/admin/webhook-health as super -> 200 (regression Phase 10/11 widget)",
+    "Frontend super login: [data-testid=master-admin-badge] visible with Crown + 'MASTER ADMIN' gold pill",
+    "Frontend admin2 login: [data-testid=master-admin-badge] NOT present in DOM",
+    "Frontend super Roster: Admin filter shows 2, admin@heroichifi.org visible",
+    "Frontend admin2 Roster: Admin filter shows 1, admin@heroichifi.org NOT visible"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_master_admin.py",
+    "/app/test_reports/pytest/pytest_master_admin.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/admin.py: users-list filter uses $ne on email — correct but case-sensitive. If any seeded docs stored email with different casing than ADMIN_EMAIL env, filter could leak. Consider storing/comparing via normalized lowercase index, or use a case-insensitive regex. Currently OK because registration lowercases email.",
+    "routes/subscriptions.py approve/reject: master override applies to the SAME admin drafting AND approving; separation-of-duties bypass is intentional per spec but should be visibly logged. log_activity is already called on approve path — good. Suggest also tagging 'override=true' in the detail string when is_super_admin(admin) so audit trail is explicit.",
+    "utils/auth.py super_admin_email(): fallback default 'admin@heroichifi.org' if env not set is fine but consider raising at startup if ADMIN_EMAIL missing to fail fast rather than silently degrading gate.",
+    "routes/auth.py: is_super_admin is attached inside `user` object on login response, not at root — matches frontend AuthContext usage (user.is_super_admin). Review-request wording mentioned root but implementation choice is consistent and correct; no action needed.",
+    "Dashboard.js: `user.is_super_admin` relies on AuthContext refreshing via /auth/me on mount. On a hard-refresh of /dashboard, the badge briefly is absent for ~300–800ms until /auth/me resolves. Cosmetic only.",
+    "Pre-existing Donate.js form-hydration bug flagged in iteration_12 is still not patched (out of scope for this iteration)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_master_admin.py (NEW)",
+    "/app/test_reports/pytest/pytest_master_admin.xml (NEW)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (4/4 assertions — badge & roster for both admins)"},
+  "test_credentials": {
+    "super_admin": {"email": "admin@heroichifi.org", "password": "HHF@admin2024"},
+    "regular_admin": {"email": "admin2@heroichifi.org", "password": "HHF@admin2024_alt"}
+  },
+  "seed_data_creation": "Tests may create annual_80g_drafts for FY 2022-23 (super) and 2023-24 (admin2) only if none exist; both are marked 'rejected' after test so they remain as historical audit records. No destructive writes, no email dispatch. A random TEST_promote_*@example.com target is passed to /api/admin/promote-request; endpoint responds 404 target-not-found so no promotion_requests document is created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Master-Admin tier is GA. admin@heroichifi.org is hidden from admin2@heroichifi.org in: /api/admin/users, per-user CRUD (returns 404 via utils.auth.require_admin_can_view_target), /api/admin/activity-logs, and /api/admin/stats user counts. Master override is active on annual_80g approve/reject self-gate and on /api/admin/promote-request (required_approvals=1). Frontend [data-testid=master-admin-badge] rendered only when user.is_super_admin===true (hydrated via /auth/me). Run tests: pytest /app/backend/tests/test_master_admin.py -v. Regression tests (heroic-patrons, live subscriptions, webhook-health) still green."
+}

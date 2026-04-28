@@ -8,7 +8,7 @@ from models.schemas import (
     EmailBlastInput, EventReportInput, AdminPromotionRequest, DeleteUserInput,
     PANVerifyInput
 )
-from utils.auth import require_admin, get_current_user
+from utils.auth import require_admin, get_current_user, is_super_admin, super_admin_email
 from utils.activity import log_activity
 from utils.email import send_email_blast, send_notification_email
 from utils.llm import generate_event_article
@@ -65,7 +65,9 @@ async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict
 # ── Admin Users ──
 @router.get("/admin/users")
 async def admin_list_users(user: dict = Depends(require_admin)):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    # Hide the Master Admin from every other admin
+    query = {} if is_super_admin(user) else {"email": {"$ne": super_admin_email()}}
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
     donation_totals = {}
     agg = await db.donations.aggregate([
         {"$match": {"status": {"$in": ["confirmed", "pending"]}}},
@@ -81,6 +83,9 @@ async def admin_list_users(user: dict = Depends(require_admin)):
 @router.put("/admin/users/{user_email}/update")
 async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict = Depends(require_admin)):
     email = user_email.lower().strip()
+    # Master Admin is invisible / immutable to regular admins
+    if is_super_admin(email) and not is_super_admin(admin):
+        raise HTTPException(status_code=404, detail="User not found")
     target = await db.users.find_one({"email": email})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -123,6 +128,8 @@ async def admin_delete_user(user_email: str, data: DeleteUserInput, user: dict =
     email = user_email.lower().strip()
     if email == user["email"]:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    if is_super_admin(email) and not is_super_admin(user):
+        raise HTTPException(status_code=404, detail="User not found")
     if not data.reason or len(data.reason.strip()) < 5:
         raise HTTPException(status_code=400, detail="A removal reason (min 5 chars) is required for audit")
     target = await db.users.find_one({"email": email}, {"_id": 0, "password_hash": 0})
@@ -146,6 +153,8 @@ async def admin_delete_user(user_email: str, data: DeleteUserInput, user: dict =
 async def admin_verify_pan(user_email: str, admin: dict = Depends(require_admin)):
     """Verify PAN of a user using Sandbox API (or stub if placeholder keys)."""
     email = user_email.lower().strip()
+    if is_super_admin(email) and not is_super_admin(admin):
+        raise HTTPException(status_code=404, detail="User not found")
     target = await db.users.find_one({"email": email})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -185,6 +194,8 @@ async def admin_verify_pan_adhoc(data: PANVerifyInput, admin: dict = Depends(req
 @router.post("/admin/users/{user_email}/badge")
 async def admin_add_badge(user_email: str, data: BadgeAction, admin: dict = Depends(require_admin)):
     email = user_email.lower().strip()
+    if is_super_admin(email) and not is_super_admin(admin):
+        raise HTTPException(status_code=404, detail="User not found")
     target = await db.users.find_one({"email": email})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -199,6 +210,8 @@ async def admin_add_badge(user_email: str, data: BadgeAction, admin: dict = Depe
 @router.delete("/admin/users/{user_email}/badge/{badge_name}")
 async def admin_remove_badge(user_email: str, badge_name: str, admin: dict = Depends(require_admin)):
     email = user_email.lower().strip()
+    if is_super_admin(email) and not is_super_admin(admin):
+        raise HTTPException(status_code=404, detail="User not found")
     target = await db.users.find_one({"email": email})
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
@@ -211,21 +224,23 @@ async def admin_remove_badge(user_email: str, badge_name: str, admin: dict = Dep
 # ── Admin Stats ──
 @router.get("/admin/stats")
 async def admin_stats(user: dict = Depends(require_admin)):
+    # Filter Master Admin out of counts shown to other admins
+    user_filter = {} if is_super_admin(user) else {"email": {"$ne": super_admin_email()}}
     total_donations = await db.donations.count_documents({})
     agg = await db.donations.aggregate([{"$group": {"_id": None, "total": {"$sum": "$amount"}}}]).to_list(1)
     total_amount = agg[0]["total"] if agg else 0
     confirmed = await db.donations.count_documents({"status": "confirmed"})
-    total_vol = await db.users.count_documents({"role": "volunteer"})
-    total_members = await db.users.count_documents({"role": "member"})
+    total_vol = await db.users.count_documents({"role": "volunteer", **user_filter})
+    total_members = await db.users.count_documents({"role": "member", **user_filter})
     total_q = await db.queries.count_documents({})
     open_q = await db.queries.count_documents({"status": "open"})
-    total_users = await db.users.count_documents({})
+    total_users = await db.users.count_documents(user_filter)
     total_tickets = await db.tickets.count_documents({})
     open_tickets = await db.tickets.count_documents({"status": "open"})
     pending_role_requests = await db.role_requests.count_documents({"status": "pending"})
     total_drives = await db.drives.count_documents({})
-    verified_pan = await db.users.count_documents({"pan_verified": True})
-    unverified_pan = await db.users.count_documents({"pan_verified": {"$ne": True}})
+    verified_pan = await db.users.count_documents({"pan_verified": True, **user_filter})
+    unverified_pan = await db.users.count_documents({"pan_verified": {"$ne": True}, **user_filter})
     return {
         "donations": {"total": total_donations, "confirmed": confirmed, "total_amount": total_amount},
         "volunteers": {"total": total_vol},
@@ -383,7 +398,12 @@ async def update_wall_entry(user_email: str, data: dict, admin: dict = Depends(r
 # ── Admin Activity Logs ──
 @router.get("/admin/activity-logs")
 async def admin_activity_logs(limit: int = 100, admin: dict = Depends(require_admin)):
-    return await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    if is_super_admin(admin):
+        return await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    # Hide all activity by/about the Master Admin from regular admins
+    sa = super_admin_email()
+    q = {"$and": [{"user_email": {"$ne": sa}}, {"entity_id": {"$ne": sa}}]}
+    return await db.activity_logs.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
 
 
 # ── Email Blasts ──
@@ -558,7 +578,11 @@ async def request_admin_promotion(data: AdminPromotionRequest, admin: dict = Dep
     if existing:
         raise HTTPException(status_code=400, detail="A pending promotion request already exists for this user")
     admin_count = await db.users.count_documents({"role": "admin"})
-    required_approvals = max(1, admin_count - 1)
+    # Master Admin overrides multi-admin gate (master control)
+    if is_super_admin(admin):
+        required_approvals = 1
+    else:
+        required_approvals = max(1, admin_count - 1)
     doc = {
         "id": str(uuid.uuid4()), "target_email": target_email,
         "target_name": target.get("name", ""),

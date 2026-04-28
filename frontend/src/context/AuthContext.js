@@ -14,6 +14,15 @@ export function AuthProvider({ children }) {
       try {
         setUser(JSON.parse(stored));
       } catch { /* ignore */ }
+      // Refresh from server so is_super_admin + role changes propagate on reload
+      api.get("/auth/me")
+        .then(({ data }) => {
+          if (data?.user) {
+            setUser(data.user);
+            localStorage.setItem("hhf_user", JSON.stringify(data.user));
+          }
+        })
+        .catch(() => { /* stale token: user will be bounced on next protected call */ });
     }
     setLoading(false);
   }, []);

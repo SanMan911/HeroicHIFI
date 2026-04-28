@@ -402,12 +402,14 @@ async def admin_list_drafts(admin: dict = Depends(require_admin)):
 
 @router.post("/admin/annual-80g/drafts/{draft_id}/approve")
 async def admin_approve_draft(draft_id: str, admin: dict = Depends(require_admin)):
+    from utils.auth import is_super_admin
     draft = await db.annual_80g_drafts.find_one({"id": draft_id})
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
     if draft["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Draft is {draft['status']}, not pending")
-    if draft["drafted_by"] == admin["email"]:
+    # Master Admin overrides separation-of-duties (master control)
+    if draft["drafted_by"] == admin["email"] and not is_super_admin(admin):
         raise HTTPException(status_code=403, detail="Approval must come from a different admin (separation-of-duties).")
 
     fs_start = _date.fromisoformat(draft["fy_start"])
@@ -452,12 +454,13 @@ async def admin_approve_draft(draft_id: str, admin: dict = Depends(require_admin
 
 @router.post("/admin/annual-80g/drafts/{draft_id}/reject")
 async def admin_reject_draft(draft_id: str, admin: dict = Depends(require_admin)):
+    from utils.auth import is_super_admin
     draft = await db.annual_80g_drafts.find_one({"id": draft_id})
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
     if draft["status"] != "pending":
         raise HTTPException(status_code=400, detail=f"Draft is {draft['status']}, not pending")
-    if draft["drafted_by"] == admin["email"]:
+    if draft["drafted_by"] == admin["email"] and not is_super_admin(admin):
         raise HTTPException(status_code=403, detail="Reject must come from a different admin.")
     await db.annual_80g_drafts.update_one({"id": draft_id}, {"$set": {
         "status": "rejected",

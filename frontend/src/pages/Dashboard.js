@@ -314,7 +314,17 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-[#1E56A0]/10 flex items-center justify-center"><LayoutDashboard className="w-6 h-6 text-[#1E56A0]" /></div>
-              <div><h1 className="text-3xl sm:text-4xl font-semibold text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="dashboard-title">Admin Dashboard</h1><p className="text-sm text-slate-500">{t.welcome}, {user.name || user.email}</p></div>
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-semibold text-[#0D2847] flex items-center gap-3 flex-wrap" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="dashboard-title">
+                  Admin Dashboard
+                  {user.is_super_admin && (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-amber-400 to-yellow-500 text-[#0D2847] px-3 py-1 rounded-full shadow-sm border border-amber-300" data-testid="master-admin-badge">
+                      <Crown className="w-3 h-3" /> Master Admin
+                    </span>
+                  )}
+                </h1>
+                <p className="text-sm text-slate-500">{t.welcome}, {user.name || user.email}</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               {notifications.filter(n => !n.read).length > 0 && <span className="relative"><Bell className="w-5 h-5 text-[#FF7F00]" /><span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center">{notifications.filter(n => !n.read).length}</span></span>}

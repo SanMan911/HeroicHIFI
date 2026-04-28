@@ -52,3 +52,26 @@ async def require_admin(request: Request) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+
+import os
+
+
+def super_admin_email() -> str:
+    """The single Master Admin email (from env). Hidden from regular admins
+    and granted override authority on multi-admin gates."""
+    return os.environ.get("ADMIN_EMAIL", "admin@heroichifi.org").lower().strip()
+
+
+def is_super_admin(user_or_email) -> bool:
+    if not user_or_email:
+        return False
+    email = user_or_email["email"] if isinstance(user_or_email, dict) else user_or_email
+    return (email or "").lower().strip() == super_admin_email()
+
+
+async def require_admin_can_view_target(caller: dict, target_email: str):
+    """Block regular admins from viewing/modifying the Master Admin."""
+    if is_super_admin(target_email) and not is_super_admin(caller):
+        raise HTTPException(status_code=404, detail="User not found")
