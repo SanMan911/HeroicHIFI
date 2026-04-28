@@ -2,13 +2,13 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 import io
 import uuid
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 
 from config import db
 from models.schemas import (
     StatusUpdate, AdminUserUpdate, BadgeAction, TicketResponse, DriveInput,
     EmailBlastInput, EventReportInput, AdminPromotionRequest, DeleteUserInput,
-    PANVerifyInput, AdminRemovalRequest
+    PANVerifyInput, AdminRemovalRequest, EventProposalInput, EventEditInput
 )
 from utils.auth import require_admin, get_current_user, is_super_admin, super_admin_email
 from utils.activity import log_activity
@@ -147,6 +147,36 @@ async def admin_update_query_status(item_id: str, data: StatusUpdate, user: dict
     return {"message": "Status updated", "status": data.status}
 
 
+@router.put("/admin/queries/{item_id}/respond")
+async def admin_respond_to_query(item_id: str, body: dict, admin: dict = Depends(require_admin)):
+    """Email a reply to the original visitor and mark the query responded.
+    This is the bridge for **anonymous public visitors** — they can't use the
+    in-app messaging system because they don't have an account."""
+    response_text = (body or {}).get("response", "").strip()
+    if len(response_text) < 5:
+        raise HTTPException(status_code=400, detail="Please type at least a 5-character reply.")
+    q = await db.queries.find_one({"id": item_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if not q.get("email"):
+        raise HTTPException(status_code=400, detail="The query has no email address — cannot reply.")
+    # Send the reply via the same email pipeline as ticket responses
+    from utils.email import send_query_response_email
+    sent = await send_query_response_email(q, response_text, admin)
+    await db.queries.update_one(
+        {"id": item_id},
+        {"$set": {
+            "status": "responded",
+            "admin_response": response_text,
+            "responded_by": admin["email"],
+            "responded_at": datetime.now(timezone.utc).isoformat(),
+            "email_sent": sent,
+        }},
+    )
+    await log_activity("query_responded", "query", item_id, admin["email"], f"Replied via email (sent={sent})", "")
+    return {"message": "Reply sent." if sent else "Reply saved (email failed — check Resend logs).", "email_sent": sent}
+
+
 # ── Admin Users ──
 @router.get("/admin/users")
 async def admin_list_users(user: dict = Depends(require_admin)):
@@ -236,6 +266,12 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
             cleaned = data.designation.strip()
             if cleaned and cleaned not in OFFICE_POSTS_SET:
                 raise HTTPException(status_code=400, detail=f"'{cleaned}' is not a recognised office-bearer post.")
+            # Office-bearer posts apply ONLY to admins. Promote the user first.
+            if cleaned and target.get("role") != "admin":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Office posts are reserved for admins. Promote {target.get('name') or email} to admin first via the Roster card or the Admins tab.",
+                )
             # Enforce single-occupant posts (Chairman / Secretary / Treasurer)
             if cleaned in UNIQUE_POSTS:
                 holder = await db.users.find_one(
@@ -591,14 +627,47 @@ async def update_wall_entry(user_email: str, data: dict, admin: dict = Depends(r
 
 
 # ── Admin Activity Logs ──
+async def _archive_old_activity_logs(days: int = 7):
+    """Move activity-log rows older than ``days`` to the archive collection.
+    Called lazily whenever an admin fetches the live log so we don't need a
+    separate cron. Idempotent and safe to call repeatedly."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cursor = db.activity_logs.find({"timestamp": {"$lt": cutoff}})
+    moved = 0
+    async for doc in cursor:
+        doc.pop("_id", None)
+        doc["archived_at"] = datetime.now(timezone.utc).isoformat()
+        await db.activity_logs_archive.insert_one(doc)
+        moved += 1
+    if moved:
+        await db.activity_logs.delete_many({"timestamp": {"$lt": cutoff}})
+    return moved
+
+
 @router.get("/admin/activity-logs")
 async def admin_activity_logs(limit: int = 100, admin: dict = Depends(require_admin)):
+    # Lazy archive — keep the live collection lean (≤ 7 days).
+    try:
+        await _archive_old_activity_logs(7)
+    except Exception:
+        pass
     if is_super_admin(admin):
         return await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
     # Hide all activity by/about the Master Admin from regular admins
     sa = super_admin_email()
     q = {"$and": [{"user_email": {"$ne": sa}}, {"entity_id": {"$ne": sa}}]}
     return await db.activity_logs.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+
+
+@router.get("/admin/activity-logs/archive")
+async def admin_activity_logs_archive(limit: int = 200, admin: dict = Depends(require_admin)):
+    """Read-only access to the archived (>7 days old) activity rows."""
+    if is_super_admin(admin):
+        return await db.activity_logs_archive.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    sa = super_admin_email()
+    q = {"$and": [{"user_email": {"$ne": sa}}, {"entity_id": {"$ne": sa}}]}
+    return await db.activity_logs_archive.find(q, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+
 
 
 # ── Email Blasts ──
@@ -627,6 +696,216 @@ async def admin_send_email_blast(data: EmailBlastInput, admin: dict = Depends(re
 @router.get("/admin/email-blasts")
 async def admin_list_email_blasts(admin: dict = Depends(require_admin)):
     return await db.email_blasts.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+
+
+# ── Event Proposals (Proposer + Seconder + Treasurer approval) ──
+async def _treasurer_email() -> str | None:
+    u = await db.users.find_one({"designation": "Treasurer"}, {"_id": 0, "email": 1})
+    return u["email"] if u else None
+
+
+@router.post("/admin/events/propose")
+async def propose_event(data: EventProposalInput, admin: dict = Depends(require_admin)):
+    try:
+        date.fromisoformat(data.event_date.strip()[:10])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="event_date must be YYYY-MM-DD.")
+    if data.days < 1:
+        raise HTTPException(status_code=400, detail="days must be ≥ 1.")
+    if data.budget < 0:
+        raise HTTPException(status_code=400, detail="budget cannot be negative.")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "mission": data.mission.strip(),
+        "drive_name": data.drive_name.strip(),
+        "event_date": data.event_date.strip()[:10],
+        "place": data.place.strip(),
+        "days": int(data.days),
+        "event_time": (data.event_time or "").strip() or None,
+        "budget": float(data.budget),
+        "notes": (data.notes or "").strip() or None,
+        "proposer": admin["email"],
+        "proposer_name": admin.get("name", ""),
+        "seconder": None, "seconded_at": None,
+        "treasurer_decision": None, "treasurer_email": None, "treasurer_at": None, "treasurer_note": None,
+        "status": "proposed",
+        "delete_request": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.event_proposals.insert_one(doc)
+    doc.pop("_id", None)
+    await log_activity("event_proposed", "event", doc["id"], admin["email"], f"{doc['drive_name']} on {doc['event_date']}", "")
+    return {"message": "Event proposed. Awaiting a seconder.", "event": doc}
+
+
+@router.put("/admin/events/{event_id}/second")
+async def second_event(event_id: str, admin: dict = Depends(require_admin)):
+    ev = await db.event_proposals.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if ev.get("status") != "proposed":
+        raise HTTPException(status_code=400, detail=f"Cannot second an event with status '{ev.get('status')}'.")
+    if ev.get("proposer") == admin["email"]:
+        raise HTTPException(status_code=400, detail="The proposer cannot also second the event.")
+    await db.event_proposals.update_one(
+        {"id": event_id},
+        {"$set": {"seconder": admin["email"],
+                  "seconded_at": datetime.now(timezone.utc).isoformat(),
+                  "status": "seconded",
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    await log_activity("event_seconded", "event", event_id, admin["email"], f"{ev['drive_name']}", "")
+    return {"message": "Event seconded. Awaiting Treasurer approval."}
+
+
+@router.put("/admin/events/{event_id}/treasurer-decision")
+async def treasurer_decision(event_id: str, body: dict, admin: dict = Depends(require_admin)):
+    decision = (body or {}).get("decision", "").strip().lower()
+    note = (body or {}).get("note", "").strip()
+    if decision not in ("approved", "declined"):
+        raise HTTPException(status_code=400, detail="decision must be 'approved' or 'declined'.")
+    if (admin.get("designation") or "") != "Treasurer" and not is_super_admin(admin):
+        raise HTTPException(status_code=403, detail="Only the Treasurer (or Master Admin override) can give the final decision.")
+    ev = await db.event_proposals.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if ev.get("status") != "seconded":
+        raise HTTPException(status_code=400, detail=f"Event must be seconded before Treasurer decision (current: {ev.get('status')}).")
+    if decision == "declined" and len(note) < 5:
+        raise HTTPException(status_code=400, detail="Please provide a note (≥ 5 chars) — required for AGM minutes.")
+    new_status = "approved" if decision == "approved" else "declined"
+    await db.event_proposals.update_one(
+        {"id": event_id},
+        {"$set": {"treasurer_decision": decision,
+                  "treasurer_email": admin["email"],
+                  "treasurer_at": datetime.now(timezone.utc).isoformat(),
+                  "treasurer_note": note or None,
+                  "status": new_status,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    await log_activity(f"event_{new_status}", "event", event_id, admin["email"], f"{ev['drive_name']} | budget=₹{ev.get('budget', 0):,.0f}", "")
+    return {"message": f"Event {new_status} by Treasurer."}
+
+
+@router.put("/admin/events/{event_id}/edit")
+async def edit_event(event_id: str, data: EventEditInput, admin: dict = Depends(require_admin)):
+    ev = await db.event_proposals.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if ev.get("status") == "deleted":
+        raise HTTPException(status_code=400, detail="Cannot edit a deleted event.")
+    payload = data.model_dump(exclude_unset=True)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Nothing to update.")
+    if "event_date" in payload and payload["event_date"]:
+        try:
+            date.fromisoformat(payload["event_date"].strip()[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="event_date must be YYYY-MM-DD.")
+        payload["event_date"] = payload["event_date"].strip()[:10]
+    if "days" in payload and payload["days"] is not None and payload["days"] < 1:
+        raise HTTPException(status_code=400, detail="days must be ≥ 1.")
+    substantive_keys = {"mission", "drive_name", "event_date", "place", "days", "event_time", "budget"}
+    is_substantive = bool(substantive_keys & set(payload.keys()))
+    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    revote_triggered = False
+    if is_substantive and ev.get("status") in ("seconded", "approved"):
+        payload.update({
+            "status": "proposed", "seconder": None, "seconded_at": None,
+            "treasurer_decision": None, "treasurer_email": None,
+            "treasurer_at": None, "treasurer_note": None,
+        })
+        revote_triggered = True
+    await db.event_proposals.update_one({"id": event_id}, {"$set": payload})
+    await log_activity("event_edited", "event", event_id, admin["email"], f"Fields: {list(payload.keys())}", "")
+    return {"message": "Event updated." + (" Re-seconding & treasurer approval needed." if revote_triggered else ""), "needs_revote": revote_triggered}
+
+
+@router.post("/admin/events/{event_id}/delete-request")
+async def request_event_delete(event_id: str, body: dict, admin: dict = Depends(require_admin)):
+    reason = (body or {}).get("reason", "").strip()
+    if len(reason) < 5:
+        raise HTTPException(status_code=400, detail="A reason of at least 5 characters is required.")
+    ev = await db.event_proposals.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if ev.get("status") == "deleted":
+        raise HTTPException(status_code=400, detail="Event is already deleted.")
+    if is_super_admin(admin):
+        await db.event_proposals.update_one(
+            {"id": event_id},
+            {"$set": {"status": "deleted", "deleted_by": admin["email"], "deleted_reason": reason,
+                      "deleted_at": datetime.now(timezone.utc).isoformat(),
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        await log_activity("event_deleted", "event", event_id, admin["email"], f"Master-Admin override: {reason}", "")
+        return {"message": "Event deleted by Master Admin override."}
+    voters = await _regular_admin_emails()
+    delete_req = {
+        "requested_by": admin["email"], "reason": reason,
+        "required_voters": voters, "approvals": [admin["email"]],
+        "rejections": [], "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if set(delete_req["approvals"]) >= set(voters):
+        await db.event_proposals.update_one(
+            {"id": event_id},
+            {"$set": {"status": "deleted", "deleted_by": admin["email"], "deleted_reason": reason,
+                      "deleted_at": datetime.now(timezone.utc).isoformat(), "delete_request": delete_req,
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        await log_activity("event_deleted", "event", event_id, admin["email"], f"Unanimous (sole voter): {reason}", "")
+        return {"message": "Event deleted (sole regular admin)."}
+    await db.event_proposals.update_one({"id": event_id}, {"$set": {"delete_request": delete_req}})
+    await log_activity("event_delete_requested", "event", event_id, admin["email"], f"Needs unanimous vote: {reason}", "")
+    remaining = len(set(voters) - {admin["email"]})
+    return {"message": f"Delete proposal raised. Needs unanimous approval from {remaining} more admin(s)."}
+
+
+@router.put("/admin/events/{event_id}/delete-vote")
+async def vote_event_delete(event_id: str, body: dict, admin: dict = Depends(require_admin)):
+    action = (body or {}).get("action", "").strip().lower()
+    if action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'.")
+    ev = await db.event_proposals.find_one({"id": event_id})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    req = ev.get("delete_request")
+    if not req:
+        raise HTTPException(status_code=400, detail="No active delete request.")
+    if ev.get("status") == "deleted":
+        raise HTTPException(status_code=400, detail="Event already deleted.")
+    voters = set(req.get("required_voters", []))
+    if not is_super_admin(admin) and admin["email"] not in voters:
+        raise HTTPException(status_code=403, detail="You are not on this delete vote's roster.")
+    if action == "reject":
+        await db.event_proposals.update_one({"id": event_id}, {"$set": {"delete_request": None, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        await log_activity("event_delete_rejected", "event", event_id, admin["email"], "Rejected", "")
+        return {"message": "Delete request rejected and cleared."}
+    approvals = list(set(req.get("approvals", []) + [admin["email"]]))
+    req["approvals"] = approvals
+    if is_super_admin(admin) or set(approvals) >= voters:
+        await db.event_proposals.update_one(
+            {"id": event_id},
+            {"$set": {"status": "deleted", "deleted_by": admin["email"],
+                      "deleted_reason": req.get("reason", ""),
+                      "deleted_at": datetime.now(timezone.utc).isoformat(),
+                      "delete_request": req,
+                      "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        await log_activity("event_deleted", "event", event_id, admin["email"], f"Unanimous: {req.get('reason', '')}", "")
+        return {"message": "Event deleted (unanimous)."}
+    await db.event_proposals.update_one({"id": event_id}, {"$set": {"delete_request": req}})
+    remaining = len(voters - set(approvals))
+    return {"message": f"Approved. {remaining} more admin(s) needed."}
+
+
+@router.get("/admin/events/proposals")
+async def list_event_proposals(admin: dict = Depends(require_admin)):
+    cursor = db.event_proposals.find({}, {"_id": 0}).sort("created_at", -1)
+    rows = await cursor.to_list(500)
+    treasurer = await _treasurer_email()
+    return {"events": rows, "treasurer_email": treasurer, "viewer_is_treasurer": (admin.get("designation") == "Treasurer")}
 
 
 # ── Event Report & Article Generation ──

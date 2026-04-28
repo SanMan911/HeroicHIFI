@@ -153,6 +153,48 @@ async def send_notification_email(email: str, subject: str, message: str):
         return False
 
 
+async def send_query_response_email(query: dict, response_text: str, admin: dict) -> bool:
+    """Email a reply back to the visitor who submitted a Contact Us query."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key or not resend:
+        return False
+    try:
+        resend.api_key = api_key
+        admin_name = admin.get("name") or admin.get("email", "Heroic HIFI Foundation")
+        # Preserve the visitor's original message in the reply for context
+        original = (query.get("message") or "").replace("<", "&lt;").replace(">", "&gt;")
+        reply_html = response_text.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [query["email"]],
+            "subject": f"Re: {query.get('subject', 'Your enquiry')} — Heroic HIFI Foundation",
+            "html": f"""
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f8fafc;">
+              <div style="background:white;border-radius:12px;padding:24px;border:1px solid #e0e7ff;">
+                <h2 style="color:#1E56A0;margin:0 0 4px 0;">Heroic HIFI Foundation</h2>
+                <p style="color:#94a3b8;font-size:12px;margin:0 0 24px 0;">A Section 8 Non-Profit Organisation</p>
+                <p style="color:#0D2847;">Hello {query.get('name', 'there')},</p>
+                <p style="color:#475569;line-height:1.6;">Thank you for reaching out to us. Please find our response below:</p>
+                <div style="background:#f1f5f9;border-left:4px solid #1E56A0;padding:14px 16px;margin:18px 0;border-radius:6px;color:#0D2847;line-height:1.7;">
+                  {reply_html}
+                </div>
+                <p style="color:#475569;line-height:1.6;">If you have follow-up questions, simply reply to this email or visit our Contact page.</p>
+                <p style="color:#0D2847;margin:24px 0 4px 0;font-weight:600;">Warm regards,</p>
+                <p style="color:#0D2847;margin:0;">{admin_name}<br/><span style="color:#94a3b8;font-size:12px;">Heroic HIFI Foundation</span></p>
+                <hr style="margin:24px 0;border:none;border-top:1px solid #e2e8f0;">
+                <p style="color:#94a3b8;font-size:11px;margin:0;">Your original message:</p>
+                <blockquote style="color:#94a3b8;font-size:12px;margin:6px 0 0 0;padding-left:12px;border-left:2px solid #e2e8f0;font-style:italic;">{original}</blockquote>
+              </div>
+            </div>
+            """,
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        return True
+    except Exception as e:
+        logger.error(f"Query response email error: {e}")
+        return False
+
+
 
 async def send_donation_receipt_email(donation: dict, pdf_bytes: bytes, label: str = "donation") -> bool:
     """Email the donor a PROVISIONAL receipt (not a tax certificate).

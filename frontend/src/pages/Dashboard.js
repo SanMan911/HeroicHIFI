@@ -129,7 +129,7 @@ export default function Dashboard() {
     }
     setFetching(true);
     try {
-      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes, rmRes] = await Promise.all([
+      const [statsRes, donRes, volRes, qRes, usersRes, msgsRes, ticketsRes, wofRes, rrRes, drivesRes, logsRes, pendingRes, blastsRes, promoRes, reportsRes, notifRes, subsRes, hookRes, draftsRes, obhRes, rmRes, evpRes] = await Promise.all([
         api.get("/admin/stats"), api.get("/admin/donations"), api.get("/admin/volunteers"),
         api.get("/admin/queries"), api.get("/admin/users"), api.get("/admin/messages"),
         api.get("/admin/tickets"), api.get("/wall-of-fame"), api.get("/admin/role-requests"),
@@ -141,6 +141,7 @@ export default function Dashboard() {
         api.get("/admin/annual-80g/drafts"),
         api.get("/admin/office-bearer-history"),
         api.get("/admin/remove-admin-requests"),
+        api.get("/admin/events/proposals"),
       ]);
       setStats(statsRes.data); setDonations(donRes.data); setVolunteers(volRes.data);
       setQueries(qRes.data); setUsers(usersRes.data); setMessageThreads(msgsRes.data);
@@ -153,6 +154,8 @@ export default function Dashboard() {
       setDraftRows(draftsRes.data);
       setOfficeHistory(obhRes.data);
       setRemovalRequests(rmRes.data);
+      setEventProposals(evpRes.data?.events || []);
+      setViewerIsTreasurer(!!evpRes.data?.viewer_is_treasurer);
       // Show mandatory event report modal
       if (pendingRes.data.length > 0) {
         setShowEventReport(pendingRes.data[0]);
@@ -239,8 +242,60 @@ export default function Dashboard() {
   // Drive form state
   const [driveForm, setDriveForm] = useState({ title: "", description: "", date: "", location: "", drive_type: "upcoming", mission_slug: "", estimated_days: 1, time: "" });
   const [showDriveForm, setShowDriveForm] = useState(false);
+  // Event proposal workflow state
+  const [eventProposals, setEventProposals] = useState([]);
+  const [viewerIsTreasurer, setViewerIsTreasurer] = useState(false);
+  const [showProposeForm, setShowProposeForm] = useState(false);
+  const [proposalForm, setProposalForm] = useState({ mission: "", drive_name: "", event_date: "", place: "", days: 1, event_time: "", budget: 0, notes: "" });
   const handleCreateDrive = async () => { if (!driveForm.title || !driveForm.date || !driveForm.location) { toast.error("Fill title, date, location"); return; } try { await api.post("/admin/drives", driveForm); toast.success("Created!"); setDriveForm({ title: "", description: "", date: "", location: "", drive_type: "upcoming", mission_slug: "", estimated_days: 1, time: "" }); setShowDriveForm(false); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
   const handleDeleteDrive = async (id) => { if (!window.confirm("Delete?")) return; try { await api.delete(`/admin/drives/${id}`); toast.success("Deleted"); fetchData(); } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); } };
+  const handleProposeEvent = async () => {
+    const f = proposalForm;
+    if (!f.mission || !f.drive_name || !f.event_date || !f.place) { toast.error("Mission, drive name, date, and place are required."); return; }
+    try { const { data } = await api.post("/admin/events/propose", { ...f, days: parseInt(f.days) || 1, budget: parseFloat(f.budget) || 0 }); toast.success(data.message); setShowProposeForm(false); setProposalForm({ mission: "", drive_name: "", event_date: "", place: "", days: 1, event_time: "", budget: 0, notes: "" }); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleSecondEvent = async (id) => {
+    try { const { data } = await api.put(`/admin/events/${id}/second`); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleTreasurerDecision = async (id, decision) => {
+    let note = "";
+    if (decision === "declined") {
+      note = window.prompt("Reason for declining (≥ 5 chars, recorded in AGM minutes):") || "";
+      if (note.trim().length < 5) { toast.error("Reason required."); return; }
+    } else {
+      note = window.prompt("Optional approval note (e.g., budget head):") || "";
+    }
+    try { const { data } = await api.put(`/admin/events/${id}/treasurer-decision`, { decision, note }); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleEditEvent = async (ev) => {
+    const newBudget = window.prompt(`Edit budget for "${ev.drive_name}" (current: ₹${Number(ev.budget || 0).toLocaleString("en-IN")}). Enter new amount:`, String(ev.budget || 0));
+    if (newBudget === null) return;
+    const num = parseFloat(newBudget);
+    if (isNaN(num) || num < 0) { toast.error("Invalid budget."); return; }
+    try { const { data } = await api.put(`/admin/events/${ev.id}/edit`, { budget: num }); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleDeleteEvent = async (id, name) => {
+    const reason = window.prompt(`Delete "${name}"? Reason (≥ 5 chars, AGM record):`);
+    if (reason === null) return;
+    if (reason.trim().length < 5) { toast.error("Reason required."); return; }
+    try { const { data } = await api.post(`/admin/events/${id}/delete-request`, { reason: reason.trim() }); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleVoteDeleteEvent = async (id, action) => {
+    try { const { data } = await api.put(`/admin/events/${id}/delete-vote`, { action }); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+  const handleRespondToQuery = async (q) => {
+    const reply = window.prompt(`Reply to ${q.name} (${q.email}):\n\nOriginal: "${(q.message || "").slice(0, 120)}${(q.message || "").length > 120 ? "…" : ""}"\n\nYour response:`);
+    if (reply === null) return;
+    if (reply.trim().length < 5) { toast.error("Reply must be at least 5 characters."); return; }
+    try { const { data } = await api.put(`/admin/queries/${q.id}/respond`, { response: reply.trim() }); toast.success(data.message); fetchData(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
 
   // Email blast form
   const [blastForm, setBlastForm] = useState({ subject: "", body: "", target: "all" });
@@ -422,7 +477,7 @@ export default function Dashboard() {
           {activeTab === "donations" && <DonationsPanel donations={donations} onStatusChange={handleStatusChange} canPurge={!!user.is_super_admin} onPurgeAll={handlePurgeDonations} />}
 
           {/* QUERIES */}
-          {activeTab === "queries" && <QueriesPanel queries={queries} onStatusChange={handleStatusChange} />}
+          {activeTab === "queries" && <QueriesPanel queries={queries} onStatusChange={handleStatusChange} onRespond={handleRespondToQuery} />}
 
           {/* MESSAGES */}
           {activeTab === "messages" && <MessagesPanel threads={messageThreads} activeThread={activeAdminThread} threadMsgs={adminThreadMsgs} onLoadThread={loadAdminThread} onBack={() => setActiveAdminThread(null)} />}
@@ -453,9 +508,98 @@ export default function Dashboard() {
           {/* EVENTS / DRIVES */}
           {activeTab === "drives" && (
             <div data-testid="admin-drives">
+              {/* — Event Proposal Workflow — */}
+              <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-5 mb-6" data-testid="event-proposals-card">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h2 className="text-lg font-semibold text-[#0D2847] flex items-center gap-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                    <Compass className="w-4 h-4 text-amber-700" /> Event Proposals
+                  </h2>
+                  <Button size="sm" onClick={() => setShowProposeForm(!showProposeForm)} className="bg-amber-600 hover:bg-amber-700 text-white rounded-lg gap-1" data-testid="propose-event-btn">
+                    <Plus className="w-4 h-4" /> Propose Event
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">Workflow: <strong>Proposer</strong> drafts → <strong>Seconder</strong> (any other admin) seconds → <strong>Treasurer</strong> approves/declines based on budget. Edits to substantive fields auto-reset to <em>proposed</em> for re-validation. Deletion requires unanimous vote (Master Admin can override).</p>
+                {showProposeForm && (
+                  <div className="bg-amber-50/40 border border-amber-100 rounded-xl p-4 mb-4 space-y-2" data-testid="propose-event-form">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input placeholder="Mission (e.g. Environment, Hunger)" value={proposalForm.mission} onChange={e => setProposalForm({...proposalForm, mission: e.target.value})} className="rounded-xl" data-testid="prop-mission" />
+                      <Input placeholder="Drive name (e.g. Tree Plantation @ Korha)" value={proposalForm.drive_name} onChange={e => setProposalForm({...proposalForm, drive_name: e.target.value})} className="rounded-xl" data-testid="prop-drive-name" />
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      <Input type="date" value={proposalForm.event_date} onChange={e => setProposalForm({...proposalForm, event_date: e.target.value})} className="rounded-xl" data-testid="prop-date" />
+                      <Input type="text" placeholder="Time (HH:MM, optional)" value={proposalForm.event_time} onChange={e => setProposalForm({...proposalForm, event_time: e.target.value})} className="rounded-xl" data-testid="prop-time" />
+                      <Input placeholder="Place" value={proposalForm.place} onChange={e => setProposalForm({...proposalForm, place: e.target.value})} className="rounded-xl col-span-2" data-testid="prop-place" />
+                      <Input type="number" min={1} placeholder="Days" value={proposalForm.days} onChange={e => setProposalForm({...proposalForm, days: e.target.value})} className="rounded-xl" data-testid="prop-days" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input type="number" min={0} placeholder="Budget (INR)" value={proposalForm.budget} onChange={e => setProposalForm({...proposalForm, budget: e.target.value})} className="rounded-xl" data-testid="prop-budget" />
+                      <Input placeholder="Notes (optional)" value={proposalForm.notes} onChange={e => setProposalForm({...proposalForm, notes: e.target.value})} className="rounded-xl" data-testid="prop-notes" />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <Button onClick={handleProposeEvent} className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl" data-testid="submit-proposal-btn">Submit Proposal</Button>
+                      <Button variant="outline" onClick={() => setShowProposeForm(false)} className="rounded-xl">Cancel</Button>
+                    </div>
+                  </div>
+                )}
+                {eventProposals.length === 0
+                  ? <p className="text-center text-slate-400 py-6 text-xs">No proposals yet.</p>
+                  : (
+                    <div className="space-y-2" data-testid="event-proposals-list">
+                      {eventProposals.map(ev => {
+                        const isProposer = ev.proposer === user.email;
+                        const canSecond = ev.status === "proposed" && !isProposer;
+                        const canTreasurer = ev.status === "seconded" && (viewerIsTreasurer || user.is_super_admin);
+                        const hasActiveDeleteVote = !!ev.delete_request && ev.status !== "deleted";
+                        const inDeleteRoster = hasActiveDeleteVote && ((ev.delete_request.required_voters || []).includes(user.email) || user.is_super_admin);
+                        const alreadyVotedDelete = hasActiveDeleteVote && (ev.delete_request.approvals || []).includes(user.email);
+                        return (
+                          <div key={ev.id} className={`rounded-xl border p-3 ${ev.status === "approved" ? "bg-green-50/40 border-green-200" : ev.status === "declined" || ev.status === "deleted" ? "bg-red-50/40 border-red-200" : "bg-white border-amber-100"}`} data-testid={`event-prop-${ev.id}`}>
+                            <div className="flex items-start justify-between gap-3 flex-wrap">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-[#0D2847] truncate flex items-center gap-2 flex-wrap">
+                                  {ev.drive_name}
+                                  <StatusBadge status={ev.status} />
+                                  {ev.event_time && <span className="text-[10px] text-slate-400">@ {ev.event_time}</span>}
+                                </p>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  <strong>{ev.mission}</strong> · {ev.place} · {ev.event_date} · {ev.days} day{ev.days > 1 ? "s" : ""} · Budget: <strong>{"\u20B9"} {Number(ev.budget || 0).toLocaleString("en-IN")}</strong>
+                                </p>
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                  Proposer: {ev.proposer_name || ev.proposer}
+                                  {ev.seconder && <> · Seconded by: {ev.seconder}</>}
+                                  {ev.treasurer_decision && <> · Treasurer: {ev.treasurer_decision} ({ev.treasurer_email})</>}
+                                  {ev.notes && <> · "{ev.notes}"</>}
+                                  {ev.deleted_reason && <> · Deleted: "{ev.deleted_reason}"</>}
+                                </p>
+                                {hasActiveDeleteVote && ev.status !== "deleted" && (
+                                  <p className="text-[11px] text-red-600 mt-1">Delete vote pending — {ev.delete_request.approvals.length}/{ev.delete_request.required_voters.length} approved · Reason: "{ev.delete_request.reason}"</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {canSecond && <Button size="sm" onClick={() => handleSecondEvent(ev.id)} className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] rounded-lg h-7" data-testid={`second-${ev.id}`}><CheckCircle className="w-3 h-3 mr-1" />Second</Button>}
+                                {canTreasurer && <>
+                                  <Button size="sm" onClick={() => handleTreasurerDecision(ev.id, "approved")} className="bg-green-600 hover:bg-green-700 text-white text-[11px] rounded-lg h-7" data-testid={`approve-${ev.id}`}><CheckCircle className="w-3 h-3 mr-1" />Approve</Button>
+                                  <Button size="sm" variant="outline" onClick={() => handleTreasurerDecision(ev.id, "declined")} className="border-red-200 text-red-600 text-[11px] rounded-lg h-7" data-testid={`decline-${ev.id}`}><XCircle className="w-3 h-3 mr-1" />Decline</Button>
+                                </>}
+                                {ev.status !== "deleted" && <Button size="sm" variant="outline" onClick={() => handleEditEvent(ev)} className="text-[11px] rounded-lg h-7" data-testid={`edit-${ev.id}`}>Edit Budget</Button>}
+                                {ev.status !== "deleted" && !hasActiveDeleteVote && <Button size="sm" variant="outline" onClick={() => handleDeleteEvent(ev.id, ev.drive_name)} className="border-red-200 text-red-600 text-[11px] rounded-lg h-7" data-testid={`delete-prop-${ev.id}`}><Trash2 className="w-3 h-3 mr-1" />Delete</Button>}
+                                {hasActiveDeleteVote && inDeleteRoster && !alreadyVotedDelete && <>
+                                  <Button size="sm" onClick={() => handleVoteDeleteEvent(ev.id, "approve")} className="bg-red-600 hover:bg-red-700 text-white text-[11px] rounded-lg h-7" data-testid={`approve-del-${ev.id}`}>Approve Delete</Button>
+                                  <Button size="sm" variant="outline" onClick={() => handleVoteDeleteEvent(ev.id, "reject")} className="text-[11px] rounded-lg h-7" data-testid={`reject-del-${ev.id}`}>Reject</Button>
+                                </>}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+              </div>
+
+              {/* — Public Drive Calendar (existing) — */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Events & Drives</h2>
-                <Button size="sm" onClick={() => setShowDriveForm(!showDriveForm)} className="bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-lg gap-1" data-testid="add-drive-btn"><Plus className="w-4 h-4" /> Create Event</Button>
+                <h2 className="text-lg font-semibold text-[#0D2847]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Public Drive Calendar</h2>
+                <Button size="sm" onClick={() => setShowDriveForm(!showDriveForm)} className="bg-[#1E56A0] hover:bg-[#174A8A] text-white rounded-lg gap-1" data-testid="add-drive-btn"><Plus className="w-4 h-4" /> Publish Drive</Button>
               </div>
               {showDriveForm && (
                 <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-4 mb-4 space-y-3" data-testid="drive-form">
@@ -899,11 +1043,25 @@ function DonationsPanel({ donations, onStatusChange, canPurge, onPurgeAll }) {
   );
 }
 
-function QueriesPanel({ queries, onStatusChange }) {
+function QueriesPanel({ queries, onStatusChange, onRespond }) {
   const [expandedId, setExpandedId] = useState(null);
   if (!queries.length) return <p className="text-center text-slate-400 py-12">No queries.</p>;
-  return (<div className="space-y-3" data-testid="admin-queries-list">{queries.map(q => (<div key={q.id} className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden"><div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpandedId(expandedId === q.id ? null : q.id)}><div className="flex items-center gap-4 min-w-0"><div className="w-9 h-9 rounded-full bg-[#28A9E2]/10 flex items-center justify-center shrink-0"><MessageSquare className="w-4 h-4 text-[#28A9E2]" /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{q.subject}</p><p className="text-xs text-slate-400">{q.name}</p></div></div><StatusBadge status={q.status} /></div>
-    {expandedId === q.id && (<div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-2"><p className="text-xs text-slate-600 bg-sky-50/50 rounded-lg p-3">{q.message}</p><Select value={q.status} onValueChange={val => onStatusChange("queries", q.id, val)}><SelectTrigger className="h-7 text-xs w-32 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="responded">Responded</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div>)}</div>))}</div>);
+  return (<div className="space-y-3" data-testid="admin-queries-list">{queries.map(q => (<div key={q.id} className="bg-white rounded-xl border border-sky-100 shadow-sm overflow-hidden"><div className="p-4 flex items-center justify-between cursor-pointer hover:bg-sky-50/30" onClick={() => setExpandedId(expandedId === q.id ? null : q.id)}><div className="flex items-center gap-4 min-w-0"><div className="w-9 h-9 rounded-full bg-[#28A9E2]/10 flex items-center justify-center shrink-0"><MessageSquare className="w-4 h-4 text-[#28A9E2]" /></div><div className="min-w-0"><p className="text-sm font-medium text-[#0D2847] truncate">{q.subject}</p><p className="text-xs text-slate-400">{q.name} · {q.email}</p></div></div><StatusBadge status={q.status} /></div>
+    {expandedId === q.id && (<div className="px-4 pb-4 border-t border-sky-50 pt-3 space-y-3">
+      <p className="text-xs text-slate-600 bg-sky-50/50 rounded-lg p-3 whitespace-pre-wrap">{q.message}</p>
+      {q.admin_response && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <p className="text-[10px] text-green-700 font-medium uppercase tracking-wider mb-1">Replied{q.email_sent === false ? " (email failed)" : " by email"} · {q.responded_by}</p>
+          <p className="text-xs text-green-900 whitespace-pre-wrap">{q.admin_response}</p>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={q.status} onValueChange={val => onStatusChange("queries", q.id, val)}><SelectTrigger className="h-7 text-xs w-32 rounded-lg"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="responded">Responded</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+        <Button size="sm" onClick={() => onRespond(q)} className="bg-[#1E56A0] hover:bg-[#174A8A] text-white text-xs h-7 rounded-lg" data-testid={`respond-query-${q.id}`}>
+          <Mail className="w-3 h-3 mr-1" /> {q.admin_response ? "Send another reply" : "Reply via Email"}
+        </Button>
+      </div>
+    </div>)}</div>))}</div>);
 }
 
 function MessagesPanel({ threads, activeThread, threadMsgs, onLoadThread, onBack }) {

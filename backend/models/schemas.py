@@ -94,6 +94,28 @@ class AdminRemovalRequest(BaseModel):
     target_email: str
     reason: str = ""
 
+
+class EventProposalInput(BaseModel):
+    mission: str  # broad mission category, e.g. "Environment", "Hunger", "Education"
+    drive_name: str  # specific drive, e.g. "Tree Plantation @ Korha Village"
+    event_date: str  # YYYY-MM-DD
+    place: str
+    days: int = 1
+    event_time: Optional[str] = None  # HH:MM (optional)
+    budget: float = 0.0
+    notes: Optional[str] = None
+
+
+class EventEditInput(BaseModel):
+    mission: Optional[str] = None
+    drive_name: Optional[str] = None
+    event_date: Optional[str] = None
+    place: Optional[str] = None
+    days: Optional[int] = None
+    event_time: Optional[str] = None
+    budget: Optional[float] = None
+    notes: Optional[str] = None
+
 class BadgeAction(BaseModel):
     badge: str
 
