@@ -111,7 +111,7 @@ async def assemble_hero_card(slug_or_email: str) -> dict | None:
         r["peak_pledge"] = round_to_100(r.get("peak_pledge"))
 
     # Office tenure history (post-by-post)
-    office_history = await db.office_history.find(
+    office_history = await db.office_bearer_tenures.find(
         {"user_email": email}, {"_id": 0},
     ).sort("start_date", -1).to_list(50)
 

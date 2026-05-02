@@ -12,6 +12,66 @@ except ImportError:
     resend = None
 
 
+async def send_appointment_letter_email(*, to_email: str, appointee_name: str, post: str,
+                                       pdf_bytes: bytes, start_date_str: str) -> bool:
+    """Email the auto-generated Letter of Appointment to the new office bearer."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    if not api_key or not resend or not to_email:
+        logger.info(f"[APPT MOCK] would email {to_email} appointment letter for {post} (eff. {start_date_str}, {len(pdf_bytes)} bytes)")
+        return False
+    try:
+        resend.api_key = api_key
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [to_email],
+            "subject": f"Letter of Appointment \u2014 {post}, Heroic HIFI Foundation",
+            "html": f"""
+            <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;background:#FFFFFF;color:#0D2847;">
+                <div style="background:linear-gradient(135deg,#1E56A0 0%,#163E78 100%);padding:32px 28px;color:#FFFFFF;">
+                    <h1 style="margin:0;font-size:22px;font-weight:600;">Heroic HIFI Foundation</h1>
+                    <p style="margin:6px 0 0 0;font-size:13px;color:#A8C5E8;">Section 8 Non-Profit \u2022 Bhagalpur, Bihar</p>
+                </div>
+                <div style="padding:28px;">
+                    <p style="font-size:14px;line-height:1.6;">
+                        Dear {appointee_name},<br/><br/>
+                        On behalf of the Board of Heroic HIFI Foundation, it is my privilege to formally
+                        convey our decision to appoint you as the <strong>{post}</strong> of the Foundation,
+                        with effect from <strong>{start_date_str}</strong>.
+                    </p>
+                    <p style="font-size:14px;line-height:1.6;">
+                        Your formal <strong>Letter of Appointment</strong> is attached to this email for your records.
+                        It bears the foundation's electronic seal and forms part of our governance archive.
+                    </p>
+                    <div style="background:#FEF7E6;border:1.5px solid #FCD45F;border-radius:12px;padding:14px;margin:20px 0;">
+                        <p style="margin:0;font-size:13px;color:#7A4F00;">
+                            <strong>What's next?</strong> Please reply with a brief acknowledgement so the Board can record
+                            your acceptance. The tenure ledger and AGM report will reference this appointment automatically.
+                        </p>
+                    </div>
+                    <p style="font-size:13px;line-height:1.6;color:#475569;">
+                        Welcome aboard. We are deeply grateful for your willingness to serve.
+                    </p>
+                    <hr style="border:none;border-top:1px solid #E2E8F0;margin:24px 0;"/>
+                    <p style="font-size:11px;color:#94A3B8;text-align:center;margin:0;">
+                        Heroic HIFI Foundation \u2022 hhf.hifi@proton.me \u2022 +91 9060460224
+                    </p>
+                </div>
+            </div>
+            """,
+            "attachments": [{
+                "filename": f"Appointment_{post.replace(' ', '_')}_{appointee_name.replace(' ', '_')}.pdf",
+                "content": list(pdf_bytes),
+            }],
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"Appointment letter emailed to {to_email} for post {post}")
+        return True
+    except Exception as e:
+        logger.error(f"Appointment email error for {to_email}: {e}")
+        return False
+
+
+
 async def send_donation_failed_email(donation: dict) -> bool:
     """Send a warm follow-up when a pending donation is auto-rejected after the
     24-hour confirmation window. Includes a fresh donation CTA so we recover the

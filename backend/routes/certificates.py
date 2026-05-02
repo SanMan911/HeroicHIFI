@@ -486,3 +486,125 @@ def generate_agm_report_pdf(
     buf.seek(0)
     return buf.read()
 
+
+# ── Letter of Appointment PDF ──
+def generate_appointment_letter_pdf(*, appointee_name: str, post: str,
+                                    start_date_iso: str, leadership_bio: str = "",
+                                    issued_by_name: str = "", issued_by_post: str = "",
+                                    appointment_id: str = "") -> bytes:
+    """Formal letter of appointment for Office Bearers (Chairman, Secretary,
+    Treasurer, Event Incharge, Assistant). Generated automatically by the
+    Master Admin assignment flow and emailed to the appointee."""
+    buf = io.BytesIO()
+    c = pdf_canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    _draw_letterhead(c, w, h, "LETTER OF APPOINTMENT", post.upper())
+
+    def fmt_iso(iso: str) -> str:
+        if not iso:
+            return "—"
+        try:
+            d = datetime.fromisoformat(iso.replace("Z", "+00:00")).date() if "T" in iso else date.fromisoformat(iso)
+            return d.strftime("%d-%m-%Y")
+        except Exception:
+            return iso
+
+    today_str = datetime.now(IST).date().strftime("%d-%m-%Y")
+    start_str = fmt_iso(start_date_iso)
+
+    y = h - 95*mm
+    c.setFont(_BODY_FONT, 9)
+    c.setFillColor(DARK)
+    c.drawRightString(w - 35*mm, y, f"Dated: {today_str}")
+    if appointment_id:
+        c.setFillColor(GRAY)
+        c.setFont(_BODY_FONT, 7.5)
+        c.drawString(35*mm, y, f"Ref: {appointment_id[:18]}")
+        c.setFont(_BODY_FONT, 9)
+        c.setFillColor(DARK)
+
+    y -= 14*mm
+    c.setFont(_BODY_BOLD, 11)
+    c.drawString(35*mm, y, "To,")
+    y -= 6*mm
+    c.setFont(_BODY_FONT, 11)
+    c.drawString(35*mm, y, f"{appointee_name},")
+    y -= 6*mm
+    c.setFillColor(GRAY)
+    c.setFont(_BODY_FONT, 9)
+    c.drawString(35*mm, y, "(Through electronic delivery)")
+
+    y -= 14*mm
+    c.setFont(_BODY_BOLD, 11)
+    c.setFillColor(NAVY)
+    c.drawString(35*mm, y, f"Subject: Appointment as {post}, Heroic HIFI Foundation")
+
+    y -= 14*mm
+    body_text = (
+        f"Dear {appointee_name},<br/><br/>"
+        f"On behalf of the Board of <b>Heroic HIFI Foundation</b>, it is my privilege to formally "
+        f"convey our unanimous decision to appoint you as the <b>{post}</b> of the Foundation, "
+        f"with effect from <b>{start_str}</b>."
+        "<br/><br/>"
+        "This appointment is made in recognition of the dedication, integrity and stewardship you "
+        "have shown towards the Foundation's mission of building a more compassionate, equitable and "
+        "empowered society. By accepting this office you agree to:"
+        "<br/><br/>"
+        "&nbsp;&nbsp;1. Uphold the values, byelaws and constitutional framework of the Foundation at all times.<br/>"
+        f"&nbsp;&nbsp;2. Discharge the duties of the office of <b>{post}</b> with diligence, transparency and the highest fiduciary standards.<br/>"
+        "&nbsp;&nbsp;3. Maintain the confidentiality of all sensitive information accessed in the course of this office.<br/>"
+        "&nbsp;&nbsp;4. Cooperate fully with statutory audits, AGM proceedings, and Income Tax / Section 8 compliance under the Companies Act, 2013."
+    )
+    if leadership_bio:
+        body_text += f"<br/><br/><i>&ldquo;{leadership_bio}&rdquo;</i>"
+    body_text += (
+        "<br/><br/>"
+        "Your tenure shall be governed by the Foundation's tenure-tracking ledger and may be honourably "
+        "concluded as per due process. We are confident that under your stewardship, the Foundation will "
+        "continue to touch lives meaningfully, in keeping with our motto: "
+        "<i>service before self, dignity for all</i>."
+        "<br/><br/>"
+        "With warm regards and heartfelt gratitude,"
+    )
+    para_style = ParagraphStyle(
+        name="appt-body", fontName=_BODY_FONT, fontSize=10.5, leading=15,
+        textColor=DARK, alignment=TA_LEFT,
+    )
+    para = Paragraph(body_text, para_style)
+    _aw, ah = para.wrap(w - 70*mm, y - 70*mm)
+    para.drawOn(c, 35*mm, y - ah)
+    y -= ah + 8*mm
+
+    if y < 70*mm:
+        c.showPage()
+        _draw_letterhead(c, w, h, "LETTER OF APPOINTMENT (continued)", post.upper())
+        y = h - 100*mm
+    y -= 20*mm
+    c.setFont(_BODY_BOLD, 10)
+    c.setFillColor(NAVY)
+    c.drawString(35*mm, y, "For Heroic HIFI Foundation")
+    y -= 14*mm
+    c.setFont(_BODY_BOLD, 10)
+    c.setFillColor(DARK)
+    c.drawString(35*mm, y, issued_by_name or "Authorised Signatory")
+    if issued_by_post:
+        y -= 5*mm
+        c.setFont(_BODY_FONT, 9)
+        c.setFillColor(GRAY)
+        c.drawString(35*mm, y, issued_by_post)
+
+    y -= 18*mm
+    c.setStrokeColor(ORANGE)
+    c.setLineWidth(0.8)
+    c.line(35*mm, y, w - 35*mm, y)
+    y -= 6*mm
+    c.setFont(_BODY_FONT, 7.5)
+    c.setFillColor(GRAY)
+    c.drawString(35*mm, y, "Auto-generated on the date hereof. This letter is electronically issued and does not require a wet-ink signature.")
+    y -= 4*mm
+    c.drawString(35*mm, y, "Email: hhf.hifi@proton.me  \u00b7  Phone: (+91) 9060460224  \u00b7  Section 8 Non-Profit  \u00b7  Bhagalpur, Bihar")
+
+    c.save()
+    buf.seek(0)
+    return buf.read()
+

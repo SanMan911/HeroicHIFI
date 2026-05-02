@@ -176,7 +176,7 @@ async def get_wall_of_fame_comprehensive():
         r["peak_pledge"] = round_to_100(r.get("peak_pledge"))
 
     # Office Bearer history (current + past tenures)
-    office_history = await db.office_history.find({}, {"_id": 0}).sort("start_date", -1).to_list(500)
+    office_history = await db.office_bearer_tenures.find({}, {"_id": 0}).sort("start_date", -1).to_list(500)
 
     # Heroic Patrons (current sustainers)
     patrons = await db.users.find(
@@ -280,10 +280,10 @@ async def get_recognitions():
                 })
     recent = recent[:12]
     # Active office bearers — pull from the authoritative tenure log
-    # (office_history) where end_date is NULL. Includes EVERY post: Chairman,
-    # Secretary, Treasurer, Event Incharge, Assistant — not just the C/S/T trio.
+    # (office_bearer_tenures) where end_date is NULL. Includes EVERY post:
+    # Chairman, Secretary, Treasurer, Event Incharge, Assistant.
     bearers = []
-    async for o in db.office_history.find(
+    async for o in db.office_bearer_tenures.find(
         {"end_date": None},
         {"_id": 0, "user_name": 1, "user_email": 1, "post": 1, "start_date": 1},
     ).sort("start_date", -1):

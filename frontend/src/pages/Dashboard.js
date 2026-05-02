@@ -190,6 +190,19 @@ export default function Dashboard() {
     try { const { data } = await api.post("/admin/donations/clear-rejected"); toast.success(data.message); fetchData(); }
     catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   };
+  const handleDownloadAppointmentLetter = async (tenureId) => {
+    try {
+      const resp = await api.get(`/admin/appointment-letter/${tenureId}`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `LoA_${tenureId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => window.URL.revokeObjectURL(url), 2000);
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || "Failed to download letter");
+    }
+  };
   const handleDownloadAgmReport = async () => {
     const raw = window.prompt("FY start date (e.g. 2025-04-01).\nLeave blank for the previous completed FY:", "");
     if (raw === null) return;
@@ -1066,6 +1079,7 @@ export default function Dashboard() {
                             <th className="text-left p-3 text-amber-900 font-medium">Start</th>
                             <th className="text-left p-3 text-amber-900 font-medium">End</th>
                             <th className="text-left p-3 text-amber-900 font-medium">By</th>
+                            <th className="text-left p-3 text-amber-900 font-medium">Letter</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1073,9 +1087,16 @@ export default function Dashboard() {
                             <tr key={h.id || i} className="border-b border-amber-50 hover:bg-amber-50/20" data-testid={`obh-row-${h.id || i}`}>
                               <td className="p-3"><span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-medium">{h.post}</span></td>
                               <td className="p-3 text-[#0D2847] font-medium">{h.user_name || h.user_email}</td>
-                              <td className="p-3 text-slate-600 whitespace-nowrap">{h.start_date || "—"}</td>
-                              <td className="p-3 whitespace-nowrap">{h.end_date ? <span className="text-red-600">{h.end_date}</span> : <span className="text-green-600 font-medium">In office</span>}</td>
+                              <td className="p-3 text-slate-600 whitespace-nowrap">{formatDate(h.start_date)}</td>
+                              <td className="p-3 whitespace-nowrap">{h.end_date ? <span className="text-red-600">{formatDate(h.end_date)}</span> : <span className="text-green-600 font-medium">In office</span>}</td>
                               <td className="p-3 text-slate-500">{h.ended_by || h.started_by}</td>
+                              <td className="p-3">
+                                {h.id && (
+                                  <button onClick={() => handleDownloadAppointmentLetter(h.id)} className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-200 font-medium" title="Download Letter of Appointment" data-testid={`loa-dl-${h.id}`}>
+                                    <FileText className="w-3 h-3" /> LoA
+                                  </button>
+                                )}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

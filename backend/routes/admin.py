@@ -151,6 +151,42 @@ async def admin_office_bearer_history(user: dict = Depends(require_admin)):
     return await db.office_bearer_tenures.find({}, {"_id": 0}).sort("start_date", -1).to_list(500)
 
 
+@router.get("/admin/appointment-letter/{tenure_id}")
+async def admin_download_appointment_letter(tenure_id: str, admin: dict = Depends(require_admin)):
+    """Re-download the Letter of Appointment that was auto-issued when this
+    tenure row was created. Falls back to a freshly-rendered PDF if the
+    archived copy is unavailable (e.g. legacy tenures created before the
+    letter system existed)."""
+    row = await db.appointment_letters.find_one({"id": tenure_id}, {"_id": 0})
+    pdf_bytes = row.get("pdf_bytes") if row else None
+    appointee_name = row.get("user_name") if row else ""
+    post = row.get("post") if row else ""
+    if not pdf_bytes:
+        # Fallback: render fresh from the tenure row
+        tenure = await db.office_bearer_tenures.find_one({"id": tenure_id}, {"_id": 0})
+        if not tenure:
+            raise HTTPException(status_code=404, detail="Tenure row not found.")
+        from routes.certificates import generate_appointment_letter_pdf
+        appointee_name = tenure.get("user_name", "")
+        post = tenure.get("post", "")
+        pdf_bytes = generate_appointment_letter_pdf(
+            appointee_name=appointee_name,
+            post=post,
+            start_date_iso=tenure.get("start_date", ""),
+            leadership_bio=tenure.get("start_reason", "") or "",
+            issued_by_name=admin.get("name", "") or "Master Admin",
+            issued_by_post="Master Admin",
+            appointment_id=tenure_id,
+        )
+    safe_post = (post or "Office_Bearer").replace(" ", "_")
+    safe_name = (appointee_name or "appointee").replace(" ", "_")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="LoA_{safe_post}_{safe_name}.pdf"'},
+    )
+
+
 @router.get("/admin/agm-report")
 async def admin_agm_report(fy_start: str = "", admin: dict = Depends(require_admin)):
     """Download the AGM Governance Report PDF for the given Indian FY.
@@ -446,8 +482,9 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
             )
         # Open a new tenure row for the INCOMING post
         if new_designation:
+            tenure_id = str(uuid.uuid4())
             await db.office_bearer_tenures.insert_one({
-                "id": str(uuid.uuid4()),
+                "id": tenure_id,
                 "user_email": email,
                 "user_name": target.get("name", ""),
                 "post": new_designation,
@@ -460,6 +497,52 @@ async def admin_update_user(user_email: str, data: AdminUserUpdate, admin: dict 
                 "started_at": datetime.now(timezone.utc).isoformat(),
                 "ended_at": None,
             })
+            # Auto-generate Letter of Appointment + email donor
+            try:
+                from routes.certificates import generate_appointment_letter_pdf
+                from utils.email import send_appointment_letter_email
+                pdf_bytes = generate_appointment_letter_pdf(
+                    appointee_name=target.get("name", "") or email,
+                    post=new_designation,
+                    start_date_iso=effective,
+                    leadership_bio=reason or "",
+                    issued_by_name=admin.get("name", "") or "Master Admin",
+                    issued_by_post="Master Admin",
+                    appointment_id=tenure_id,
+                )
+                # Persist for future download
+                await db.appointment_letters.insert_one({
+                    "id": tenure_id,
+                    "user_email": email,
+                    "user_name": target.get("name", ""),
+                    "post": new_designation,
+                    "start_date": effective,
+                    "issued_by": admin["email"],
+                    "issued_at": datetime.now(timezone.utc).isoformat(),
+                    "pdf_bytes": pdf_bytes,
+                })
+                # Best-effort email (non-blocking)
+                try:
+                    from datetime import date as _date
+                    fmt_date = _date.fromisoformat(effective).strftime("%d-%m-%Y") if effective else "—"
+                except Exception:
+                    fmt_date = effective
+                try:
+                    await send_appointment_letter_email(
+                        to_email=email,
+                        appointee_name=target.get("name", "") or email,
+                        post=new_designation,
+                        pdf_bytes=pdf_bytes,
+                        start_date_str=fmt_date,
+                    )
+                except Exception:
+                    pass
+                await log_activity("appointment_letter_issued", "user", email, admin["email"],
+                                   f"Auto-issued LoA for {new_designation} (eff. {effective})", "")
+            except Exception as e:
+                # Letter generation failure must not break the admin flow
+                import logging
+                logging.getLogger(__name__).error(f"Appointment letter generation failed: {e}")
         # Lightweight audit entry in the activity log
         await log_activity(
             "office_bearer_changed", "user", email, admin["email"],
