@@ -143,6 +143,15 @@ export default function Login() {
             <>
               <h1 className="text-3xl sm:text-4xl font-semibold text-[#0D2847] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }} data-testid="login-title">{t.title}</h1>
               <p className="text-sm text-slate-500 mb-8">{t.subtitle}</p>
+              {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("reason") === "session_expired" && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 mb-6 flex items-start gap-2" data-testid="session-expired-banner">
+                  <span className="text-lg leading-none">⏰</span>
+                  <div>
+                    <p className="font-medium">Your session has expired.</p>
+                    <p className="text-xs mt-0.5">Please sign in again. If you've forgotten your password, use the <Link to="/reset-password" className="text-[#1E56A0] font-medium hover:underline">reset link</Link>.</p>
+                  </div>
+                </div>
+              )}
               {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 mb-6" data-testid="login-error">{error}</div>}
               <form onSubmit={handleLogin} className="space-y-5" data-testid="login-form">
                 <div>

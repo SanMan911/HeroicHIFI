@@ -21,6 +21,17 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem("hhf_token");
       localStorage.removeItem("hhf_user");
+      // Redirect to login with a friendly reason + Forgot Password nudge, but
+      // skip redirect if the caller is a public endpoint that treats 401 as
+      // "not authenticated" (e.g. /heroes/*, /wall-of-fame/*, /recognitions).
+      const url = err.config?.url || "";
+      const isPublic = /(\/heroes\/|\/wall-of-fame|\/recognitions|\/heroic-patrons|\/top-donor-ledger|\/most-generous-ledger|\/office-posts)/.test(url);
+      if (!isPublic && typeof window !== "undefined") {
+        const path = window.location.pathname;
+        if (path && !path.startsWith("/login") && !path.startsWith("/reset-password")) {
+          window.location.href = `/login?reason=session_expired&next=${encodeURIComponent(path)}`;
+        }
+      }
     }
     return Promise.reject(err);
   }

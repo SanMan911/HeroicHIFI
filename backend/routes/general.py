@@ -7,7 +7,7 @@ from models.schemas import (
     StatusUpdate, AdminUserUpdate, BadgeAction, VolunteerInput,
     QueryInput, TicketInput, TicketResponse, RoleChangeRequest, DriveInput
 )
-from utils.auth import get_current_user, require_admin
+from utils.auth import get_current_user, require_admin, get_current_user_optional
 from utils.activity import log_activity
 from utils.money import round_to_100
 from data.office_posts import OFFICE_POSTS
@@ -131,13 +131,20 @@ async def list_drives():
 
 # ── Public hero recognition card ──
 @router.get("/heroes/{slug_or_email}")
-async def get_hero_card(slug_or_email: str):
+async def get_hero_card(slug_or_email: str, viewer: dict = Depends(get_current_user_optional)):
     """Public per-hero recognition card — always synced from underlying truth.
-    No auth. Master Admin is intentionally not resolvable here."""
+    Leadership / office-bearer titles are hidden from unauthenticated visitors
+    (a design decision to keep governance data private to the community).
+    Master Admin is intentionally not resolvable here."""
     from utils.heroes import assemble_hero_card
     card = await assemble_hero_card(slug_or_email)
     if not card:
         raise HTTPException(status_code=404, detail="Hero not found.")
+    if not viewer:
+        # Strip everything that names an office post.
+        card["designation"] = ""
+        card["office_tenures"] = []
+        card["leadership_bio"] = ""
     return card
 
 
@@ -152,15 +159,18 @@ async def get_wall_of_fame():
     return rows
 
 
-# ── Wall of Fame — comprehensive (public) ──
+# ── Wall of Fame — comprehensive (public + auth-gated leadership) ──
 @router.get("/wall-of-fame/comprehensive")
-async def get_wall_of_fame_comprehensive():
+async def get_wall_of_fame_comprehensive(viewer: dict = Depends(get_current_user_optional)):
     """Single payload powering the public Wall of Fame page. Aggregates EVERY
     recognition surface: Top Donors, Most Generous Donors, Office Bearers
     (current + past), Heroic Patrons, Star Volunteers (Month/Quarter/Year),
     Rising Stars, Community Builders, Century Heroes, and admin-curated
     Helping Heroes. All money values rounded to the nearest 100 to keep
-    individual donation amounts private."""
+    individual donation amounts private.
+
+    Leadership (office bearer) posts are shown ONLY to authenticated
+    Members/Volunteers/Admins — never to unauthenticated public visitors."""
     from utils.top_donor import current_fy
     _s, _e, fy_label = current_fy()
 
@@ -175,8 +185,10 @@ async def get_wall_of_fame_comprehensive():
         r["peak_fee"] = round_to_100(r.get("peak_fee"))
         r["peak_pledge"] = round_to_100(r.get("peak_pledge"))
 
-    # Office Bearer history (current + past tenures)
-    office_history = await db.office_bearer_tenures.find({}, {"_id": 0}).sort("start_date", -1).to_list(500)
+    # Office Bearer history (current + past tenures) — auth-gated
+    office_history = []
+    if viewer:
+        office_history = await db.office_bearer_tenures.find({}, {"_id": 0}).sort("start_date", -1).to_list(500)
 
     # Heroic Patrons (current sustainers)
     patrons = await db.users.find(
@@ -210,15 +222,16 @@ async def get_wall_of_fame_comprehensive():
     async for u in cursor:
         for b in u.get("badges", []):
             if b in badge_holders:
-                badge_holders[b].append({
+                holder = {
                     "name": u.get("name", ""),
                     "email": u.get("email", ""),
                     "profile_pic_path": u.get("profile_pic_path", ""),
                     "volunteer_hours": u.get("volunteer_hours", 0),
-                    "designation": u.get("designation", ""),
-                    "tenure_start": u.get("tenure_start", ""),
-                    "leadership_bio": u.get("leadership_bio", ""),
-                })
+                    "designation": u.get("designation", "") if viewer else "",
+                    "tenure_start": u.get("tenure_start", "") if viewer else "",
+                    "leadership_bio": u.get("leadership_bio", "") if viewer else "",
+                }
+                badge_holders[b].append(holder)
 
     # Admin-curated Wall of Fame entries (Helping Heroes etc.)
     curated = await db.wall_of_fame.find({}, {"_id": 0}).sort("added_at", -1).to_list(200)
@@ -238,11 +251,13 @@ async def get_wall_of_fame_comprehensive():
     }
 
 
-# ── Recognitions ticker (public) ──
+# ── Recognitions ticker (public + auth-gated leadership) ──
 @router.get("/recognitions")
-async def get_recognitions():
+async def get_recognitions(viewer: dict = Depends(get_current_user_optional)):
     """Live homepage ticker payload — Top Donor of the Year + freshest badge
-    awards across volunteers & members. No auth required."""
+    awards across volunteers & members. No auth required for the top-donor and
+    most-generous surfaces, but office-bearer designations are ONLY included
+    when the viewer is authenticated."""
     from utils.top_donor import current_fy
     _s, _e, fy_label = current_fy()
     top = await db.top_donor_ledger.find_one(
@@ -281,17 +296,19 @@ async def get_recognitions():
     recent = recent[:12]
     # Active office bearers — pull from the authoritative tenure log
     # (office_bearer_tenures) where end_date is NULL. Includes EVERY post:
-    # Chairman, Secretary, Treasurer, Event Incharge, Assistant.
+    # Chairman, Secretary, Treasurer, Event Incharge, Assistant. Only surfaced
+    # to authenticated viewers — kept private from the general public.
     bearers = []
-    async for o in db.office_bearer_tenures.find(
-        {"end_date": None},
-        {"_id": 0, "user_name": 1, "user_email": 1, "post": 1, "start_date": 1},
-    ).sort("start_date", -1):
-        bearers.append({
-            "name": o.get("user_name", "") or o.get("user_email", ""),
-            "designation": o.get("post", ""),
-            "start_date": o.get("start_date", ""),
-        })
+    if viewer:
+        async for o in db.office_bearer_tenures.find(
+            {"end_date": None},
+            {"_id": 0, "user_name": 1, "user_email": 1, "post": 1, "start_date": 1},
+        ).sort("start_date", -1):
+            bearers.append({
+                "name": o.get("user_name", "") or o.get("user_email", ""),
+                "designation": o.get("post", ""),
+                "start_date": o.get("start_date", ""),
+            })
     return {
         "fy_label": fy_label,
         "top_donor": {

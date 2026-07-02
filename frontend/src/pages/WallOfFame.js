@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { useLang } from "../context/LanguageContext";
 import translations from "../data/translations";
 import api from "../lib/api";
@@ -294,6 +295,7 @@ function CuratedCard({ entry, index }) {
 
 export default function WallOfFame() {
   const { lang } = useLang();
+  const { user } = useAuth();
   const t = translations[lang].wall_of_fame || {};
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -415,8 +417,8 @@ export default function WallOfFame() {
             </section>
           )}
 
-          {/* Office Bearers — Current + Past */}
-          {officeBearers.length > 0 && (
+          {/* Office Bearers — Current + Past (auth-gated) */}
+          {officeBearers.length > 0 ? (
             <section className="pb-12" data-testid="office-bearers-section">
               <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
                 <SectionHeader
@@ -446,9 +448,22 @@ export default function WallOfFame() {
                 )}
               </div>
             </section>
-          )}
-
-          {/* Star Volunteers / Rising Stars / etc. */}
+          ) : !user ? (
+            <section className="pb-12" data-testid="office-bearers-gated">
+              <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="bg-gradient-to-br from-amber-900/25 via-amber-800/15 to-transparent border border-amber-500/25 rounded-2xl p-8 text-center">
+                  <Compass className="w-8 h-8 text-amber-300/70 mx-auto mb-3" />
+                  <h3 className="text-lg font-semibold text-white mb-1.5" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Leadership visible to our community</h3>
+                  <p className="text-sm text-slate-400 max-w-md mx-auto mb-5">
+                    Office-bearer titles (Chairman, Secretary, Treasurer, Event Incharge and beyond) are shared with our registered Members and Volunteers.
+                  </p>
+                  <Link to="/login" className="inline-flex items-center gap-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-200 rounded-full px-5 py-2 text-sm font-medium transition-colors" data-testid="office-signin-cta">
+                    Sign in to view leadership
+                  </Link>
+                </div>
+              </div>
+            </section>
+          ) : null}
           {flatHolders.length > 0 && (
             <section className="pb-12" data-testid="badge-holders-section">
               <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">

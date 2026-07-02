@@ -90,11 +90,16 @@ export function Header() {
                 </Button>
               </>
             ) : (
-              <Link to="/login" className="hidden sm:inline-flex">
-                <Button variant="ghost" size="sm" className="text-sm" data-testid="nav-login">
-                  {t.login}
-                </Button>
-              </Link>
+              <>
+                <Link to="/login" className="hidden sm:inline-flex">
+                  <Button variant="ghost" size="sm" className="text-sm" data-testid="nav-login">
+                    {t.login}
+                  </Button>
+                </Link>
+                <Link to="/reset-password" className="hidden md:inline-flex text-[11px] text-slate-500 hover:text-[#1E56A0] transition-colors" data-testid="nav-forgot-password" title="Forgot your password?">
+                  Forgot?
+                </Link>
+              </>
             )}
 
             <Link to="/donate">
@@ -149,7 +154,10 @@ export function Header() {
               <button onClick={() => { logout(); setMobileOpen(false); }} className="block py-3 px-4 text-sm text-slate-600 w-full text-left">{t.logout}</button>
             </>
           ) : (
-            <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-slate-600">{t.login}</Link>
+            <>
+              <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-3 px-4 text-sm text-slate-600">{t.login}</Link>
+              <Link to="/reset-password" onClick={() => setMobileOpen(false)} className="block py-2 px-4 text-xs text-slate-400" data-testid="nav-mobile-forgot-password">Forgot password?</Link>
+            </>
           )}
         </div>
       )}
