@@ -64,7 +64,8 @@ export default function Login() {
     try {
       await login(form.email, form.password);
       toast.success(t.login_success);
-      navigate("/dashboard");
+      const next = new URLSearchParams(window.location.search).get("next");
+      navigate(next && next.startsWith("/") ? next : "/dashboard");
     } catch (err) {
       const msg = formatApiError(err.response?.data?.detail, err);
       setError(msg); toast.error(msg);
